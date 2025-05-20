@@ -403,6 +403,35 @@ void ggml_vec_neg_f32(const int n, float * y, const float * x) {
     }
 }
 
+void ggml_vec_sqr_f32(const int n, float * y, const float * x) {
+    int i = 0;
+#if defined(__AVX512F__)
+    for (; i + 15 < n; i += 16) {
+        const __m512 vx = _mm512_loadu_ps(x + i);
+        _mm512_storeu_ps(y + i, _mm512_mul_ps(vx, vx));
+    }
+#elif defined(__AVX2__) && defined(__FMA__)
+    for (; i + 7 < n; i += 8) {
+        const __m256 vx = _mm256_loadu_ps(x + i);
+        _mm256_storeu_ps(y + i, _mm256_mul_ps(vx, vx));
+    }
+#elif defined(__SSE2__)
+    for (; i + 3 < n; i += 4) {
+        const __m128 vx = _mm_loadu_ps(x + i);
+        _mm_storeu_ps(y + i, _mm_mul_ps(vx, vx));
+    }
+#elif defined(__ARM_NEON) && defined(__aarch64__)
+    for (; i + 3 < n; i += 4) {
+        const float32x4_t vx = vld1q_f32(x + i);
+        vst1q_f32(y + i, vmulq_f32(vx, vx));
+    }
+#endif
+    // Scalar loop for leftovers or if no SIMD
+    for (; i < n; ++i) {
+        y[i] = x[i] * x[i];
+    }
+}
+
 // Definition for ggml_vec_relu_f32 (declared in vec.h)
 void ggml_vec_relu_f32(const int n, float * y, const float * x) {
     int i = 0;
