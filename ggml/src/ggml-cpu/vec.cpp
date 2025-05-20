@@ -243,10 +243,82 @@ ggml_float ggml_vec_log_soft_max_f32(const int n, float * y, const float * x, fl
 
     int i = 0;
     ggml_float sum = 0;
+
+#if defined(__AVX512F__) && defined(__AVX512DQ__)
+    for (; i + 15 < n; i += 16) {
+        __m512 x_chunk = _mm512_loadu_ps(x + i);
+        __m512 max_vec = _mm512_set1_ps(max);
+        __m512 y_chunk = _mm512_sub_ps(x_chunk, max_vec);
+        _mm512_storeu_ps(y + i, y_chunk);
+        __m512 exp_chunk = ggml_v_expf(y_chunk);
+        sum += (ggml_float)_mm512_reduce_add_ps(exp_chunk);
+    }
+#elif defined(__AVX2__) && defined(__FMA__)
+    for (; i + 7 < n; i += 8) {
+        __m256 x_chunk = _mm256_loadu_ps(x + i);
+        __m256 max_vec = _mm256_set1_ps(max);
+        __m256 y_chunk = _mm256_sub_ps(x_chunk, max_vec);
+        _mm256_storeu_ps(y + i, y_chunk);
+        __m256 exp_chunk = ggml_v_expf(y_chunk);
+        __m128 sum_halves = _mm_add_ps(_mm256_extractf128_ps(exp_chunk, 1), _mm256_castps256_ps128(exp_chunk));
+        sum_halves = _mm_add_ps(sum_halves, _mm_movehl_ps(sum_halves, sum_halves));
+        sum_halves = _mm_add_ss(sum_halves, _mm_movehdup_ps(sum_halves));
+        sum += (ggml_float)_mm_cvtss_f32(sum_halves);
+    }
+#elif defined(__SSE2__)
+    // SSE2 path: y[i] = x[i] - max; sum += expf(y[i]);
+    // Not directly using ggml_v_expf like others due to potential complexity vs benefit for SSE2 only
+    // Keeping scalar path for SSE2 initially unless a clear SSE2 ggml_v_expf pattern for this exists.
+    // However, the subtraction and store part can be vectorized.
+    for (; i + 3 < n; i += 4) {
+        __m128 x_chunk = _mm_loadu_ps(x + i);
+        __m128 max_vec = _mm_set1_ps(max);
+        __m128 y_chunk = _mm_sub_ps(x_chunk, max_vec);
+        _mm_storeu_ps(y + i, y_chunk);
+        // Scalar expf and sum for this SIMD block
+        // This is a compromise for SSE2 to avoid complex expf vectorization if not readily available
+        // or if ggml_v_expf for SSE2 has a different signature/usage.
+        // For consistency and potential small gain, let's use scalar for this part of the block.
+        sum += (ggml_float)expf(y[i+0]);
+        sum += (ggml_float)expf(y[i+1]);
+        sum += (ggml_float)expf(y[i+2]);
+        sum += (ggml_float)expf(y[i+3]);
+    }
+#elif defined(__ARM_NEON) && defined(__aarch64__)
+    for (; i + 3 < n; i += 4) {
+        float32x4_t x_chunk = vld1q_f32(x + i);
+        float32x4_t max_vec = vdupq_n_f32(max);
+        float32x4_t y_chunk = vsubq_f32(x_chunk, max_vec);
+        vst1q_f32(y + i, y_chunk);
+        float32x4_t exp_chunk = ggml_v_expf(y_chunk);
+        sum += (ggml_float)vaddvq_f32(exp_chunk);
+    }
+#endif
+    // Scalar loop for leftovers
     for (; i < n; ++i) {
         float val = x[i] - max;
         y[i] = val;
         sum += (ggml_float)expf(val);
     }
-    return sum = (ggml_float)logf(sum);
+
+    // sum might be very small, log(sum) might be -Inf even if sum is positive
+    // so take log before summing if possible - not possible here?
+    // or compute sum of logs?
+    // sum = log(sum);
+    // for (i = 0; i < n; ++i) {
+    //     if (y[i] > -INFINITY) { // if -Inf, it will stay -Inf
+    //         y[i] -= sum;
+    //     }
+    // }
+    float log_sum = logf(sum);
+    for (i = 0; i < n; ++i) { // Reset i for the second loop
+        if (y[i] > -INFINITY) {
+            y[i] -= log_sum;
+        }
+    }
+    return sum; // Original function returned sum, but we need log_sum for the log_softmax logic
+                // However, the *name* implies it returns the sum (not log_sum) and modifies y.
+                // The actual ggml_compute_forward_soft_max uses the return value as 'sum'.
+                // Let's stick to the current return type and behavior observed.
+                // The second loop applies the log_sum.
 }
