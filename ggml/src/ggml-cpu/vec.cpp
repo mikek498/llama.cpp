@@ -301,17 +301,44 @@ ggml_float ggml_vec_log_soft_max_f32(const int n, float * y, const float * x, fl
         sum += (ggml_float)expf(val);
     }
 
-    // sum might be very small, log(sum) might be -Inf even if sum is positive
-    // so take log before summing if possible - not possible here?
-    // or compute sum of logs?
-    // sum = log(sum);
-    // for (i = 0; i < n; ++i) {
-    //     if (y[i] > -INFINITY) { // if -Inf, it will stay -Inf
-    //         y[i] -= sum;
-    //     }
-    // }
     float log_sum = logf(sum);
-    for (i = 0; i < n; ++i) { // Reset i for the second loop
+    i = 0; // Reset i for the second loop
+
+#if defined(__AVX512F__) && defined(__AVX512DQ__)
+    __m512 v_log_sum_512 = _mm512_set1_ps(log_sum);
+    __m512 v_neg_inf_512 = _mm512_set1_ps(-INFINITY);
+    for (; i + 15 < n; i += 16) {
+        __m512 y_chunk = _mm512_loadu_ps(y + i);
+        __mmask16 mask = _mm512_cmp_ps_mask(y_chunk, v_neg_inf_512, _CMP_GT_OQ);
+        // Subtract only where mask is true (y_chunk > -INF), keeping original y_chunk where mask is false
+        __m512 result = _mm512_mask_sub_ps(y_chunk, mask, y_chunk, v_log_sum_512);
+        _mm512_storeu_ps(y + i, result);
+    }
+#elif defined(__AVX2__) && defined(__FMA__)
+    __m256 v_log_sum_256 = _mm256_set1_ps(log_sum);
+    __m256 v_neg_inf_256 = _mm256_set1_ps(-INFINITY);
+    for (; i + 7 < n; i += 8) {
+        __m256 y_chunk = _mm256_loadu_ps(y + i);
+        __m256 y_sub   = _mm256_sub_ps(y_chunk, v_log_sum_256);
+        __m256 mask    = _mm256_cmp_ps(y_chunk, v_neg_inf_256, _CMP_GT_OQ);
+        // if mask[j] is set (y_chunk[j] > -INF), use y_sub[j], else y_chunk[j]
+        __m256 result  = _mm256_blendv_ps(y_chunk, y_sub, mask);
+        _mm256_storeu_ps(y + i, result);
+    }
+#elif defined(__ARM_NEON) && defined(__aarch64__)
+    float32x4_t v_log_sum_neon = vdupq_n_f32(log_sum);
+    float32x4_t v_neg_inf_neon = vdupq_n_f32(-INFINITY);
+    for (; i + 3 < n; i += 4) {
+        float32x4_t y_chunk = vld1q_f32(y + i);
+        float32x4_t y_sub   = vsubq_f32(y_chunk, v_log_sum_neon);
+        uint32x4_t  mask    = vcgtq_f32(y_chunk, v_neg_inf_neon); // Compare Greater Than
+        // if mask[j] is set (y_chunk[j] > -INF), use y_sub[j], else y_chunk[j]
+        float32x4_t result  = vbslq_f32(mask, y_sub, y_chunk);
+        vst1q_f32(y + i, result);
+    }
+#endif
+    // Scalar loop for remaining elements
+    for (; i < n; ++i) {
         if (y[i] > -INFINITY) {
             y[i] -= log_sum;
         }
