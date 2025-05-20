@@ -322,7 +322,7 @@ inline static void ggml_vec_scale_f16(const int n, ggml_fp16_t * y, const float 
 }
 
 inline static void ggml_vec_norm_f32 (const int n, float * s, const float * x) { ggml_vec_dot_f32(n, s, 0, x, 0, x, 0, 1); *s = sqrtf(*s);   }
-inline static void ggml_vec_sqr_f32  (const int n, float * y, const float * x) { for (int i = 0; i < n; ++i) y[i] = x[i]*x[i];   }
+void ggml_vec_sqr_f32  (const int n, float * y, const float * x);
 inline static void ggml_vec_sqr_f16 (const int n, ggml_fp16_t * y, const ggml_fp16_t * x) {
     for (int i = 0; i < n; ++i) {
         float v = GGML_FP16_TO_FP32(x[i]);
