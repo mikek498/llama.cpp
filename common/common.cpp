@@ -119,6 +119,25 @@ int32_t cpu_get_num_physical_cores() {
     return n_threads > 0 ? (n_threads <= 4 ? n_threads : n_threads / 2) : 4;
 }
 
+#if defined(__APPLE__) && defined(__MACH__)
+// Helper function to get P-core and E-core counts on Apple Silicon
+// Returns true on success, false on failure to get both counts.
+static bool cpu_get_perf_core_counts_apple(int32_t & p_core_count, int32_t & e_core_count) {
+    size_t len_p = sizeof(p_core_count);
+    size_t len_e = sizeof(e_core_count);
+    int result_p = sysctlbyname("hw.perflevel0.physicalcpu", &p_core_count, &len_p, NULL, 0);
+    int result_e = sysctlbyname("hw.perflevel1.physicalcpu", &e_core_count, &len_e, NULL, 0);
+
+    if (result_p == 0 && result_e == 0) {
+        return true; // Successfully got both
+    }
+    // Fallback or partial success might be handled by caller if needed, here we indicate full failure
+    p_core_count = 0;
+    e_core_count = 0;
+    return false;
+}
+#endif
+
 #if defined(__x86_64__) && defined(__linux__) && !defined(__ANDROID__)
 #include <pthread.h>
 

@@ -1,0 +1,27 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+**Rule Set 0.5: Codebase Familiarization & Onboarding**
+
+*   **Goal:** Build a working understanding of the project before diving into specific issues. Proactively explore to provide better context and solutions.
+*   **0.5.1. Understand Project Purpose & High-Level Architecture:**
+    *   *Instruction:* Seek to understand the software's main purpose, its problem domain, and its high-level architectural components.
+    *   *Method:* Use `read_file` for `README.md`, files in `docs/`. Use `file_search` or `grep_search` for terms like "architecture", "design", "overview". Synthesize this information for the user if relevant to their query.
+    *   *Instruction:* Identify major modules/services and their primary interactions. Look for architectural diagrams.
+    *   *Method:* Use `list_dir` on root, `src/`, and other relevant directories. Use `file_search` for common diagram extensions (`.png`, `.svg`, `.drawio`, `.pdf`) in documentation-related folders.
+*   **0.5.2. Explore Code Structure & Key Entry Points:**
+    *   *Instruction:* Determine main programming languages, common directory conventions (e.g., `src`, `include`, `tests`, `examples`, `scripts`, `3rdparty`), and identify primary application entry points.
+    *   *Method:* Use `list_dir` to explore. Analyze file extensions. Use `grep_search` for `main(` in C/C++/Objective-C, `if __name__ == '__main__':` in Python, and common server startup patterns.
+    *   *Instruction:* Identify core data structures or classes central to the application by looking for their definitions, often in header files.
+    *   *Method:* Use `grep_search` or `file_search` for domain-specific keywords found in documentation. Prioritize reading header files in `include/` or core `src/` directories.
+*   **0.5.3. Understand Build, Dependency, and Test Processes:**
+    *   *Instruction:* Determine how the software is built (e.g., CMake, make, custom scripts like `compile.sh` or `setup_env.py`), how dependencies are managed (e.g., Git submodules, `requirements.txt`, CMake `FetchContent`), and how tests are structured and run.
+    *   *Method:* Use `read_file` for `CMakeLists.txt`, `Makefile`, `build.sh`, `setup_env.py`, `requirements.txt`, `.gitmodules`. Use `grep_search` for build commands, dependency management functions (`find_package`, `FetchContent`), and test execution patterns.
+*   **0.5.4. Identify Key Technologies & Coding Conventions:**
+    *   *Instruction:* Identify significant third-party libraries/frameworks (e.g., `ggml`, `llama.cpp`, NEON/Metal libraries) and their versions. Ascertain coding conventions or prevalent styles.
+    *   *Method:* Review build files for linked libraries. Use `grep_search` for common include patterns. Check `3rdparty/`. Look for `CONTRIBUTING.md` or `STYLEGUIDE.md`. If none, infer style by reading several source files.
+*   **0.5.5. Gain Context from Recent Activity & Known Issues:**
+    *   *Instruction:* Review recent changes and known issues to understand current development focus or problematic areas.
+    *   *Method:* Use `run_terminal_cmd` with `git log --oneline --graph --decorate -n 20` (or more). Grep codebase for `TODO:`, `FIXME:`, `XXX:`. If applicable, ask the user about access to issue trackers.

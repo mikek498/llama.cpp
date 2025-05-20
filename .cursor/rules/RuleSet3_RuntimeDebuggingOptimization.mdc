@@ -1,0 +1,41 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+**Rule Set 3: Runtime Debugging & Optimization (M1 Performance & Correctness)**
+
+*   **Goal:** Identify and resolve runtime errors (segfaults, NaNs), incorrect behavior, and performance bottlenecks, applying M1-specific knowledge for quantization and low-level code.
+*   **3.1. Characterize Runtime Problem:**
+    *   *Instruction:* Obtain a precise description of the runtime failure: segfault (with address if possible), abort signal, NaN/inf propagation (which variables/tensors?), incorrect output (specific examples), no output, hangs, or slow execution (quantified tokens/sec, latency for specific models/quantization types). Collect all console output and error messages.
+    *   *Method:* Request detailed reproduction steps, input data, expected vs. actual output, and full error logs.
+*   **3.2. Initial Diagnosis: Enhanced Logging & Standalone Tests:**
+    *   *Instruction:* For subtle issues (NaNs, logic errors in kernels like `ggml-bitnet-lut.cpp` or `ggml-bitnet-mad.cpp`): Strategically insert verbose `printf` or logging statements to trace execution flow, critical variable states, and intermediate values in computations (especially fixed-point arithmetic, bit shifts, Metal kernel inputs/outputs). Be mindful of altering performance in sensitive loops.
+    *   *Method:* Use `edit_file` to add debug prints. Guide recompilation and execution.
+    *   *Instruction:* Encourage isolating problematic code (e.g., a specific NEON kernel, Metal shader invocation) into a minimal, standalone test program to reproduce the issue with controlled inputs, simplifying debugging.
+    *   *Method:* If feasible, help sketch out a minimal test harness using `edit_file`.
+*   **3.3. Advanced Debugging with LLDB:**
+    *   *Instruction:* Guide the user to initiate an LLDB session for the failing executable (e.g., `lldb -- build/bin/llama-cli -m ... <args>`). Assist in setting effective breakpoints (function names, file:line, C++ methods, Metal kernel dispatch points, before/after assembly calls).
+    *   *Method:* Provide `run_terminal_cmd` for LLDB invocation. Suggest `breakpoint set --file <file> --line <line>` or `breakpoint set --name <func_name>`.
+    *   *Instruction:* When a breakpoint is hit or a crash occurs: Guide inspection of call stack (`bt`), local/global variables (`p var`, `frame variable var_name`, `po object`), registers (`register read`), and memory (`memory read <address> -c <count>`). For NaNs, focus on FP registers and inputs to arithmetic ops. For segfaults, examine the faulting address and related pointers/registers.
+    *   *Method:* Suggest specific LLDB commands based on the context.
+*   **3.4. Address Numerical Stability & Quantization Issues:**
+    *   *Instruction:* Systematically trace the origin of NaN/inf values. Identify the first operation (C++, NEON, Metal) producing them. Scrutinize inputs for validity (e.g., division by zero, `sqrt(<0)`). Check for overflows, underflows, or precision loss in type conversions (float to int, between quantization types like `i2_s`, `TL1`).
+    *   *Method:* Combine LLDB debugging with `read_file` for code review of arithmetic and quantization/dequantization logic. Use `edit_file` to fix identified issues.
+    *   *Instruction:* For fixed-point/quantized operations (e.g., in `ggml-bitnet-*` files): Verify correctness of scaling factors, zero-points, Look-Up Tables (LUTs), and bit manipulation logic (shifts, masks, packing/unpacking). Ensure intermediate calculations do not overflow before downscaling/quantizing. For Metal, check bitwise operations in MSL.
+    *   *Method:* Meticulously review quantization code against its specification using `read_file`. Use LLDB to inspect values at each step.
+*   **3.5. Performance Profiling & M1-Specific Optimization:**
+    *   *Instruction:* For performance issues (e.g., low tokens/sec in `llama-bench`, high latency): Guide profiling with macOS Instruments (Time Profiler for CPU, Metal System Trace for GPU). Assist in identifying hotspots in C/C++, assembly, or Metal kernels. If profiler counters are zero, help troubleshoot profiler setup (permissions, correct process attachment).
+    *   *Method:* Explain how to launch Instruments or use command-line profiling tools if available. Help interpret profiler output.
+    *   **Sub-Rule (CPU/NEON Optimization):**
+        *   *Instruction:* For C/C++ CPU bottlenecks: Evaluate if NEON intrinsics can vectorize loops or optimize computations (dot products, convolutions, data type conversions, data shuffles). Review existing NEON code for optimal instruction scheduling, data layout (for `vld1q_...`, `vst1q_...`), and register usage. Consider ARMv8.4-A SDOT instructions (e.g., via `vdotq_s32` intrinsic) where applicable, ensuring compiler support.
+        *   *Method:* Use `read_file` to analyze C/C++ code. Use `edit_file` to implement/refine NEON intrinsics from `arm_neon.h`. Guide benchmarking before/after.
+        *   *Instruction:* For highly critical sections, evaluate rewriting in hand-crafted ARM64 assembly for maximum control over instruction selection, scheduling, register allocation, and cache utilization. Ensure strict adherence to ARM64 ABI (AAPCS64) for function calls and stack management.
+        *   *Method:* Discuss feasibility with the user. If proceeding, use `edit_file` to create/modify `.S` files. This requires deep expertise.
+        *   *Instruction:* Investigate thread affinity. Advise on pinning critical compute threads to M1's Performance-cores (P-cores) if applicable (e.g., via `pthread_set_qos_class_self_np` or similar macOS mechanisms, like the `set_thread_affinity` example if made available and correct), explaining potential benefits.
+        *   *Method:* Research or use known methods for thread affinity on macOS. Explain and propose code changes using `edit_file`.
+    *   **Sub-Rule (Metal GPU Optimization):**
+        *   *Instruction:* For Metal bottlenecks identified by System Trace: Analyze for memory bandwidth issues, inefficient data access (non-coalesced), high thread execution divergence, or suboptimal threadgroup sizing. Optimize MSL using appropriate data types (`half`, `short` if precision allows), leverage threadgroup memory (`threadgroup_barrier(mem_flags::mem_threadgroup)`), and tune dispatch parameters (`MTLSize` for grid/groups).
+        *   *Method:* Use `read_file` for MSL shaders. Propose `edit_file` for shader and dispatch parameter optimizations.
+    *   *Instruction:* Insist on rigorous benchmarking after each optimization using a consistent methodology (e.g., `llama-bench` with fixed parameters, or custom microbenchmarks for specific kernels). Ensure functional correctness is maintained. Encourage committing successful optimizations with clear performance metrics.
+    *   *Method:* Define benchmark protocols. Guide execution via `run_terminal_cmd`. Compare results. Remind to test correctness and commit with messages like `Perf: Optimized X kernel with NEON dot products (+Y t/s)`.
