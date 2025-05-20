@@ -252,3 +252,7 @@ configure_file(cmake/llama.pc.in
 
 install(FILES "${CMAKE_CURRENT_BINARY_DIR}/llama.pc"
         DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
+
+option(LLAMA_ACCELERATE "Use Apple Accelerate for BLAS" ON)
+option(LLAMA_OPENBLAS   "Use OpenBLAS for BLAS"           OFF)
+option(LLAMA_BLIS       "Use BLIS for BLAS"               OFF)

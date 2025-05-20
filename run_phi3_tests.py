@@ -12,7 +12,7 @@ WORKSPACE_ROOT = "/Users/mk/dev/2025/llama.cpp" # Should be robustly determined 
 # LLAMA_CLI_PATH = os.path.join(WORKSPACE_ROOT, "build", "bin", "llama-cli") # No longer needed
 LLAMA_SERVER_PATH = os.path.join(WORKSPACE_ROOT, "build", "bin", "llama-server")
 MODEL_PATH = os.path.join(WORKSPACE_ROOT, "models", "Phi-3-mini-4k-instruct-q4.gguf")
-OUTPUT_CSV_PATH = os.path.join(WORKSPACE_ROOT, "phi3_server_qos_test.csv") # New CSV for QoS tests
+OUTPUT_CSV_PATH = os.path.join(WORKSPACE_ROOT, "phi3_server_accelerate_test.csv") # New CSV for this specific test
 PROMPT = "Write a detailed step-by-step guide on how to bake a sourdough bread, including starter care."
 TOKENS_TO_PREDICT = 256 # This will be n_predict in the API call
 CONTEXT_SIZE = 2048
@@ -241,7 +241,7 @@ def main():
         writer.writeheader()
         writer.writerows(results_data)
 
-    print(f"--- Ubatch tests with QoS complete. Results saved to {OUTPUT_CSV_PATH} ---")
+    print(f"--- Ubatch tests with Accelerate build complete. Results saved to {OUTPUT_CSV_PATH} ---")
 
 if __name__ == "__main__":
     main() 
