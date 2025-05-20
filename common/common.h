@@ -227,8 +227,8 @@ struct common_params {
     int32_t n_chunks              =    -1; // max number of chunks to process (-1 = unlimited)
     int32_t n_parallel            =     1; // number of parallel sequences to decode
     int32_t n_sequences           =     1; // number of sequences to decode
-    int32_t grp_attn_n            =     1; // group-attention factor
-    int32_t grp_attn_w            =   512; // group-attention width
+    int32_t grp_attn_n            =     1;    // group-attention factor
+    int32_t grp_attn_w            =   512;  // group-attention width
     int32_t n_print               =    -1; // print token count every n tokens (-1 = disabled)
     float   rope_freq_base        =  0.0f; // RoPE base frequency
     float   rope_freq_scale       =  0.0f; // RoPE frequency scaling factor
@@ -320,7 +320,13 @@ struct common_params {
     bool multiline_input   = false; // reverse the usage of `\`
     bool simple_io         = false; // improves compatibility with subprocesses and limited consoles
     bool cont_batching     = true;  // insert new sequences for decoding on-the-fly
-    bool flash_attn        = false; // flash attention
+
+#if defined(GGML_USE_METAL) && defined(__APPLE__)
+    bool flash_attn          = true;  // flash attention - enabled by default on Apple Metal
+#else
+    bool flash_attn          = false; // flash attention
+#endif
+
     bool no_perf           = false; // disable performance metrics
     bool ctx_shift         = true;  // context shift on inifinite text generation
     bool swa_full          = false; // use full-size SWA cache (https://github.com/ggml-org/llama.cpp/pull/13194#issuecomment-2868343055)

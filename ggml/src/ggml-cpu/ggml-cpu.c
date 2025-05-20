@@ -179,6 +179,10 @@ static int sched_yield (void) {
 #include <pthread_np.h>
 #endif
 
+#if defined(__APPLE__)
+#include <pthread/qos.h>
+#endif
+
 typedef void * thread_ret_t;
 
 #include <sys/types.h>
@@ -2826,6 +2830,19 @@ struct ggml_cplan ggml_graph_plan(
 static thread_ret_t ggml_graph_compute_thread(void * data) {
     struct ggml_compute_state * state = (struct ggml_compute_state *) data;
     struct ggml_threadpool    * tp    = state->threadpool;
+
+#if defined(__APPLE__)
+    // On Apple platforms, set QoS for worker threads to user-initiated
+    // to encourage scheduling on Performance cores.
+    // This is a higher priority than the default QoS.
+    // We do this at the start of the thread function.
+    if (tp->prio >= GGML_SCHED_PRIO_MEDIUM) { // Only boost if a non-normal priority is requested
+        int qos_ret = pthread_set_qos_class_self_np(QOS_CLASS_USER_INITIATED, 0);
+        if (qos_ret != 0) {
+            fprintf(stderr, "warn: ggml_graph_compute_thread: failed to set QoS class %s (%d)\n", strerror(qos_ret), qos_ret);
+        }
+    }
+#endif
 
     const struct ggml_cgraph * cgraph = tp->cgraph;
     const struct ggml_cplan  * cplan  = tp->cplan;
