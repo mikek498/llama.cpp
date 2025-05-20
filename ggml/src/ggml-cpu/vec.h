@@ -62,7 +62,7 @@ inline static void ggml_vec_add_f16 (const int n, ggml_fp16_t * z, const ggml_fp
 }
 void ggml_vec_add1_f32(const int n, float * y, const float * x, const float v);
 void ggml_vec_acc_f32 (const int n, float * y, const float * x);
-inline static void ggml_vec_acc1_f32(const int n, float * y, const float   v)                  { for (int i = 0; i < n; ++i) y[i] += v;           }
+void ggml_vec_acc1_f32(const int n, float * y, const float   v);
 void ggml_vec_sub_f32 (const int n, float * z, const float * x, const float * y);
 inline static void ggml_vec_sub_f16 (const int n, ggml_fp16_t * z, const ggml_fp16_t * x, const ggml_fp16_t * y) {
     for (int i = 0; i < n; ++i) {
