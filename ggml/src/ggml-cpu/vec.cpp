@@ -185,6 +185,36 @@ void ggml_vec_silu_f32(const int n, float * y, const float * x) {
     }
 }
 
+// Definition for ggml_vec_relu_f32 (declared in vec.h)
+void ggml_vec_relu_f32(const int n, float * y, const float * x) {
+    int i = 0;
+#if defined(__AVX512F__)
+    const __m512 zero_512 = _mm512_setzero_ps();
+    for (; i + 15 < n; i += 16) {
+        _mm512_storeu_ps(y + i, _mm512_max_ps(zero_512, _mm512_loadu_ps(x + i)));
+    }
+#elif defined(__AVX2__) && defined(__FMA__)
+    const __m256 zero_256 = _mm256_setzero_ps();
+    for (; i + 7 < n; i += 8) {
+        _mm256_storeu_ps(y + i, _mm256_max_ps(zero_256, _mm256_loadu_ps(x + i)));
+    }
+#elif defined(__SSE2__)
+    const __m128 zero_128 = _mm_setzero_ps();
+    for (; i + 3 < n; i += 4) {
+        _mm_storeu_ps(y + i, _mm_max_ps(zero_128, _mm_loadu_ps(x + i)));
+    }
+#elif defined(__ARM_NEON) && defined(__aarch64__)
+    const float32x4_t zero_neon = vdupq_n_f32(0.0f);
+    for (; i + 3 < n; i += 4) {
+        vst1q_f32(y + i, vmaxq_f32(zero_neon, vld1q_f32(x + i)));
+    }
+#endif
+    // Scalar loop for leftovers or if no SIMD
+    for (; i < n; ++i) {
+        y[i] = (x[i] > 0.f) ? x[i] : 0.f;
+    }
+}
+
 ggml_float ggml_vec_soft_max_f32(const int n, float * y, const float * x, float max) {
     int i = 0;
     ggml_float sum = 0;
