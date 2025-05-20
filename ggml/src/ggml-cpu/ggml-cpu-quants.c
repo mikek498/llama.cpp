@@ -7642,24 +7642,15 @@ void ggml_vec_dot_q4_K_q8_K(int n, float * GGML_RESTRICT s, size_t bs, const voi
     const uint8_t * scales = (const uint8_t*)&utmp[0];
     const uint8_t * mins   = (const uint8_t*)&utmp[2];
 
-    int8_t  aux8[QK_K];
-    int16_t aux16[8];
-    float   sums [8];
-    int32_t aux32[8];
-    memset(sums, 0, 8*sizeof(float));
-
+    // Optimized scalar version reducing memory operations
     float sumf = 0;
+    int32_t aux32[8];
+
     for (int i = 0; i < nb; ++i) {
         const uint8_t * GGML_RESTRICT q4 = x[i].qs;
-        const  int8_t * GGML_RESTRICT q8 = y[i].qs;
-        memset(aux32, 0, 8*sizeof(int32_t));
-        int8_t * GGML_RESTRICT a = aux8;
-        for (int j = 0; j < QK_K/64; ++j) {
-            for (int l = 0; l < 32; ++l) a[l] = (int8_t)(q4[l] & 0xF);
-            a += 32;
-            for (int l = 0; l < 32; ++l) a[l] = (int8_t)(q4[l]  >> 4);
-            a += 32; q4 += 32;
-        }
+        const int8_t  * GGML_RESTRICT q8 = y[i].qs;
+        
+        // Process scale factors once per block
         memcpy(utmp, x[i].scales, 12);
         utmp[3] = ((utmp[2] >> 4) & kmask2) | (((utmp[1] >> 6) & kmask3) << 4);
         const uint32_t uaux = utmp[1] & kmask1;
@@ -7667,31 +7658,55 @@ void ggml_vec_dot_q4_K_q8_K(int n, float * GGML_RESTRICT s, size_t bs, const voi
         utmp[2] = uaux;
         utmp[0] &= kmask1;
 
-        int sumi = 0;
-        for (int j = 0; j < QK_K/16; ++j) sumi += y[i].bsums[j] * mins[j/2];
-        a = aux8;
+        // Process mins contribution
+        int sumi_mins = 0;
+        for (int j = 0; j < QK_K/16; ++j) {
+            sumi_mins += y[i].bsums[j] * mins[j/2];
+        }
+
+        // Zero-initialize accumulators for this block
+        for (int l = 0; l < 8; ++l) aux32[l] = 0;
+        
         int is = 0;
         for (int j = 0; j < QK_K/32; ++j) {
-            int32_t scale = scales[is++];
-            for (int l = 0; l < 8; ++l) aux16[l] = q8[l] * a[l];
-            for (int l = 0; l < 8; ++l) aux32[l] += scale * aux16[l];
-            q8 += 8; a += 8;
-            for (int l = 0; l < 8; ++l) aux16[l] = q8[l] * a[l];
-            for (int l = 0; l < 8; ++l) aux32[l] += scale * aux16[l];
-            q8 += 8; a += 8;
-            for (int l = 0; l < 8; ++l) aux16[l] = q8[l] * a[l];
-            for (int l = 0; l < 8; ++l) aux32[l] += scale * aux16[l];
-            q8 += 8; a += 8;
-            for (int l = 0; l < 8; ++l) aux16[l] = q8[l] * a[l];
-            for (int l = 0; l < 8; ++l) aux32[l] += scale * aux16[l];
-            q8 += 8; a += 8;
+            const int32_t scale = scales[is++];
+            const uint8_t * restrict q4_ptr = q4 + j*32;
+            const int8_t * restrict q8_ptr = q8 + j*128;
+            
+            // Faster direct processing without temporary arrays
+            // Process 32 elements (32 bytes of q4 data) at a time
+            for (int l = 0; l < 32; l += 8) {
+                // Process low 4 bits (first 8 elements)
+                for (int k = 0; k < 8; ++k) {
+                    aux32[k] += scale * (q8_ptr[k] * (int8_t)(q4_ptr[l+k] & 0xF));
+                }
+                
+                // Process high 4 bits (next 8 elements)
+                for (int k = 0; k < 8; ++k) {
+                    aux32[k] += scale * (q8_ptr[k+32] * (int8_t)(q4_ptr[l+k] >> 4));
+                }
+                
+                // Move to next set of 8 elements
+                q8_ptr += 8;
+            }
+            
+            // Move to next set of 32 elements
+            q8_ptr += 96; // (128 - 32) to position for next j
         }
+        
+        // Apply scaling factors and accumulate
         const float d = GGML_FP16_TO_FP32(x[i].d) * y[i].d;
-        for (int l = 0; l < 8; ++l) sums[l] += d * aux32[l];
         const float dmin = GGML_FP16_TO_FP32(x[i].dmin) * y[i].d;
-        sumf -= dmin * sumi;
+        
+        // Sum the 8 accumulators
+        int32_t block_sum = 0;
+        for (int l = 0; l < 8; ++l) {
+            block_sum += aux32[l];
+        }
+        
+        sumf += d * block_sum - dmin * sumi_mins;
     }
-    for (int l = 0; l < 8; ++l) sumf += sums[l];
+    
     *s = sumf;
 #endif
 }

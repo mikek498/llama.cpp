@@ -175,3 +175,14 @@ target_link_libraries(${LLAMA_TEST_NAME} PRIVATE mtmd)
 get_filename_component(TEST_TARGET test-c.c NAME_WE)
 add_executable(${TEST_TARGET} test-c.c)
 target_link_libraries(${TEST_TARGET} PRIVATE llama)
+
+# Add our new q4 performance test
+add_executable(test-q4-performance test-q4-performance.c)
+target_link_libraries(test-q4-performance PRIVATE ggml common)
+target_include_directories(test-q4-performance PRIVATE ${CMAKE_SOURCE_DIR}/ggml/include ${CMAKE_SOURCE_DIR}/ggml/src)
+add_test(NAME test-q4-performance COMMAND test-q4-performance)
+
+# Add our comparison benchmark
+add_executable(test-q4-performance-compare ${CMAKE_SOURCE_DIR}/ggml/src/ggml-cpu/ggml-cpu-quants-original.c)
+target_link_libraries(test-q4-performance-compare PRIVATE ggml common)
+target_include_directories(test-q4-performance-compare PRIVATE ${CMAKE_SOURCE_DIR}/ggml/include ${CMAKE_SOURCE_DIR}/ggml/src)
