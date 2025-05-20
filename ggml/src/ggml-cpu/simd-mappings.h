@@ -2,6 +2,10 @@
 
 #include "ggml-cpu-impl.h"
 
+#if defined(__ARM_NEON)
+#include <arm_neon.h> // For NEON intrinsics
+#endif
+
 //
 // simd mappings
 //
