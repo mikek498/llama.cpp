@@ -405,7 +405,7 @@ inline static void ggml_vec_sigmoid_f16 (const int n, ggml_fp16_t * y, const ggm
     }
 }
 // TODO: optimize performance
-inline static void ggml_vec_hardswish_f32 (const int n, float * y, const float * x) { for (int i = 0; i < n; ++i) y[i] = x[i] * fminf(1.0f, fmaxf(0.0f, (x[i] + 3.0f) / 6.0f)); }
+void ggml_vec_hardswish_f32 (const int n, float * y, const float * x);
 inline static void ggml_vec_hardswish_f16 (const int n, ggml_fp16_t * y, const ggml_fp16_t * x) {
     for (int i = 0; i < n; ++i) {
         float v = GGML_FP16_TO_FP32(x[i]);
