@@ -705,7 +705,7 @@ static id<MTLBuffer> ggml_metal_mem_pool_alloc(struct ggml_metal_mem_pool * mem_
                 [heap->obj setPurgeableState:MTLPurgeableStateNonVolatile];
             }
 
-            id<MTLBuffer> buf = [heap->obj newBufferWithLength:size_aligned options:MTLResourceStorageModePrivate offset:heap->offs];
+            id<MTLBuffer> buf = [heap->obj newBufferWithLength:size_aligned options:MTLResourceStorageModeShared offset:heap->offs];
             if (buf == nil) {
                 GGML_LOG_ERROR("%s: error: failed to create MTLBuffer with size %zu\n", __func__, size_aligned);
                 return nil;
@@ -735,7 +735,7 @@ static id<MTLBuffer> ggml_metal_mem_pool_alloc(struct ggml_metal_mem_pool * mem_
     ggml_metal_heap_reset(heap);
 
     [heap->obj setPurgeableState:MTLPurgeableStateNonVolatile];
-    id<MTLBuffer> buf = [heap->obj newBufferWithLength:size_aligned options:MTLResourceStorageModePrivate offset:heap->offs];
+    id<MTLBuffer> buf = [heap->obj newBufferWithLength:size_aligned options:MTLResourceStorageModeShared offset:heap->offs];
     if (buf == nil) {
         GGML_LOG_ERROR("%s: error: failed to create MTLBuffer with size %zu\n", __func__, size_aligned);
         return NULL;
@@ -3020,7 +3020,11 @@ static bool ggml_metal_encode_node(
                     [encoder setBuffer:id_src1 offset:offs_src1    atIndex:2];
                     [encoder setBuffer:id_dst  offset:offs_dst     atIndex:3];
 
-                    [encoder setThreadgroupMemoryLength:8192 atIndex:0];
+                    {
+      size_t maxSM = device.maxThreadgroupMemoryLength;
+      size_t smem  = MIN((size_t)32768, maxSM);
+      [encoder setThreadgroupMemoryLength:smem atIndex:0];
+  }
                     [encoder dispatchThreadgroups:MTLSizeMake((ne11 + 31)/32, (ne01 + 63)/64, ne12*ne13) threadsPerThreadgroup:MTLSizeMake(128, 1, 1)];
                 } else {
                     id<MTLComputePipelineState> pipeline = nil;
@@ -3410,7 +3414,11 @@ static bool ggml_metal_encode_node(
                         [encoder setBuffer: h_tpe  offset:0            atIndex:3];
                         [encoder setBuffer: h_dst  offset:0            atIndex:4];
 
-                        [encoder setThreadgroupMemoryLength:8192 atIndex:0];
+                        {
+      size_t maxSM = device.maxThreadgroupMemoryLength;
+      size_t smem  = MIN((size_t)32768, maxSM);
+      [encoder setThreadgroupMemoryLength:smem atIndex:0];
+  }
                         [encoder dispatchThreadgroups:MTLSizeMake((ne21 + 31)/32, (ne01 + 63)/64, ne02) threadsPerThreadgroup:MTLSizeMake(128, 1, 1)];
                     }
 

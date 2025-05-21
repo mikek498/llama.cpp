@@ -8,20 +8,55 @@
 //
 // TODO: for optimal performance, become function of the device and work size
 
-#define N_R0_Q4_0 4
-#define N_SG_Q4_0 2
+#if defined(__APPLE__) && defined(__arm64__)
+#define DEFAULT_N_R0 8
+#define DEFAULT_N_SG 4
+#else
+#define DEFAULT_N_R0 4
+#define DEFAULT_N_SG 2
+#endif
+#define N_R0_Q4_0 DEFAULT_N_R0
+#define N_SG_Q4_0 DEFAULT_N_SG
 
-#define N_R0_Q4_1 4
-#define N_SG_Q4_1 2
+#if defined(__APPLE__) && defined(__arm64__)
+#define DEFAULT_N_R0 8
+#define DEFAULT_N_SG 4
+#else
+#define DEFAULT_N_R0 4
+#define DEFAULT_N_SG 2
+#endif
+#define N_R0_Q4_1 DEFAULT_N_R0
+#define N_SG_Q4_1 DEFAULT_N_SG
 
-#define N_R0_Q5_0 4
-#define N_SG_Q5_0 2
+#if defined(__APPLE__) && defined(__arm64__)
+#define DEFAULT_N_R0 8
+#define DEFAULT_N_SG 4
+#else
+#define DEFAULT_N_R0 4
+#define DEFAULT_N_SG 2
+#endif
+#define N_R0_Q5_0 DEFAULT_N_R0
+#define N_SG_Q5_0 DEFAULT_N_SG
 
-#define N_R0_Q5_1 4
-#define N_SG_Q5_1 2
+#if defined(__APPLE__) && defined(__arm64__)
+#define DEFAULT_N_R0 8
+#define DEFAULT_N_SG 4
+#else
+#define DEFAULT_N_R0 4
+#define DEFAULT_N_SG 2
+#endif
+#define N_R0_Q5_1 DEFAULT_N_R0
+#define N_SG_Q5_1 DEFAULT_N_SG
 
-#define N_R0_Q8_0 4
-#define N_SG_Q8_0 2
+#if defined(__APPLE__) && defined(__arm64__)
+#define DEFAULT_N_R0 8
+#define DEFAULT_N_SG 4
+#else
+#define DEFAULT_N_R0 4
+#define DEFAULT_N_SG 2
+#endif
+#define N_R0_Q8_0 DEFAULT_N_R0
+#define N_SG_Q8_0 DEFAULT_N_SG
 
 #define N_R0_Q2_K 4
 #define N_SG_Q2_K 2

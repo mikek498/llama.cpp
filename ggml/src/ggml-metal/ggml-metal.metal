@@ -11,6 +11,8 @@ __embed_ggml-common.h__
 
 using namespace metal;
 
+#pragma clang specialized_constant DEFAULT_TG_X = 32;
+#pragma clang specialized_constant DEFAULT_TG_Y = 4;
 #define MAX(x, y) ((x) > (y) ? (x) : (y))
 #define MIN(x, y) ((x) < (y) ? (x) : (y))
 #define SWAP(x, y) { auto tmp = (x); (x) = (y); (y) = tmp; }
@@ -635,7 +637,7 @@ kernel void kernel_add(
         device       char * dst,
         uint3   tgpig[[threadgroup_position_in_grid]],
         ushort3 tpitg[[thread_position_in_threadgroup]],
-        ushort3   ntg[[threads_per_threadgroup]]) {
+        ushort3   ntg[[threads_per_threadgroup]]) [[threadgroup_size(DEFAULT_TG_X, DEFAULT_TG_Y, 1)]] {} 
     const int i03 = tgpig.z;
     const int i02 = tgpig.y;
     const int i01 = tgpig.x;
@@ -661,7 +663,7 @@ kernel void kernel_sub(
         device       char * dst,
         uint3   tgpig[[threadgroup_position_in_grid]],
         ushort3 tpitg[[thread_position_in_threadgroup]],
-        ushort3   ntg[[threads_per_threadgroup]]) {
+        ushort3   ntg[[threads_per_threadgroup]]) [[threadgroup_size(DEFAULT_TG_X, DEFAULT_TG_Y, 1)]] {} 
     const int i03 = tgpig.z;
     const int i02 = tgpig.y;
     const int i01 = tgpig.x;
@@ -687,7 +689,7 @@ kernel void kernel_mul(
         device       char * dst,
         uint3   tgpig[[threadgroup_position_in_grid]],
         ushort3 tpitg[[thread_position_in_threadgroup]],
-        ushort3   ntg[[threads_per_threadgroup]]) {
+        ushort3   ntg[[threads_per_threadgroup]]) [[threadgroup_size(DEFAULT_TG_X, DEFAULT_TG_Y, 1)]] {} 
     const int i03 = tgpig.z;
     const int i02 = tgpig.y;
     const int i01 = tgpig.x;
@@ -713,7 +715,7 @@ kernel void kernel_div(
         device       char * dst,
         uint3   tgpig[[threadgroup_position_in_grid]],
         ushort3 tpitg[[thread_position_in_threadgroup]],
-        ushort3   ntg[[threads_per_threadgroup]]) {
+        ushort3   ntg[[threads_per_threadgroup]]) [[threadgroup_size(DEFAULT_TG_X, DEFAULT_TG_Y, 1)]] {} 
     const int i03 = tgpig.z;
     const int i02 = tgpig.y;
     const int i01 = tgpig.x;
@@ -739,7 +741,7 @@ kernel void kernel_repeat(
         device       char * dst,
         uint3   tgpig[[threadgroup_position_in_grid]],
         ushort3 tpitg[[thread_position_in_threadgroup]],
-        ushort3   ntg[[threads_per_threadgroup]]) {
+        ushort3   ntg[[threads_per_threadgroup]]) [[threadgroup_size(DEFAULT_TG_X, DEFAULT_TG_Y, 1)]] {} 
     const int i3 = tgpig.z;
     const int i2 = tgpig.y;
     const int i1 = tgpig.x;
@@ -771,7 +773,7 @@ kernel void kernel_add_row(
         device const float4 * src0,
         device const float4 * src1,
         device       float4 * dst,
-        uint tpig[[thread_position_in_grid]]) {
+        uint tpig[[thread_position_in_grid]]) [[threadgroup_size(DEFAULT_TG_X, DEFAULT_TG_Y, 1)]] {} 
     const uint nb = args.ne00/4;
     dst[tpig] = src0[tpig] + src1[tpig % nb];
 }
@@ -781,7 +783,7 @@ kernel void kernel_sub_row(
         device const float4 * src0,
         device const float4 * src1,
         device       float4 * dst,
-        uint tpig[[thread_position_in_grid]]) {
+        uint tpig[[thread_position_in_grid]]) [[threadgroup_size(DEFAULT_TG_X, DEFAULT_TG_Y, 1)]] {} 
     const uint nb = args.ne00/4;
     dst[tpig] = src0[tpig] - src1[tpig % nb];
 }
@@ -791,7 +793,7 @@ kernel void kernel_mul_row(
         device const float4 * src0,
         device const float4 * src1,
         device       float4 * dst,
-        uint tpig[[thread_position_in_grid]]) {
+        uint tpig[[thread_position_in_grid]]) [[threadgroup_size(DEFAULT_TG_X, DEFAULT_TG_Y, 1)]] {} 
     const uint nb = args.ne00/4;
     dst[tpig] = src0[tpig] * src1[tpig % nb];
 }
@@ -801,7 +803,7 @@ kernel void kernel_div_row(
         device const float4 * src0,
         device const float4 * src1,
         device       float4 * dst,
-        uint tpig[[thread_position_in_grid]]) {
+        uint tpig[[thread_position_in_grid]]) [[threadgroup_size(DEFAULT_TG_X, DEFAULT_TG_Y, 1)]] {} 
     const uint nb = args.ne00/4;
     dst[tpig] = src0[tpig] / src1[tpig % nb];
 }
@@ -810,7 +812,7 @@ kernel void kernel_scale(
         device const float * src0,
         device       float * dst,
         constant     float & scale,
-        uint tpig[[thread_position_in_grid]]) {
+        uint tpig[[thread_position_in_grid]]) [[threadgroup_size(DEFAULT_TG_X, DEFAULT_TG_Y, 1)]] {} 
     dst[tpig] = src0[tpig] * scale;
 }
 
@@ -818,7 +820,7 @@ kernel void kernel_scale_4(
         device const float4 * src0,
         device       float4 * dst,
         constant     float  & scale,
-        uint tpig[[thread_position_in_grid]]) {
+        uint tpig[[thread_position_in_grid]]) [[threadgroup_size(DEFAULT_TG_X, DEFAULT_TG_Y, 1)]] {} 
     dst[tpig] = src0[tpig] * scale;
 }
 
@@ -827,28 +829,28 @@ kernel void kernel_clamp(
         device       float * dst,
         constant     float & min,
         constant     float & max,
-        uint tpig[[thread_position_in_grid]]) {
+        uint tpig[[thread_position_in_grid]]) [[threadgroup_size(DEFAULT_TG_X, DEFAULT_TG_Y, 1)]] {} 
     dst[tpig] = src0[tpig] < min ? min : (src0[tpig] > max ? max : src0[tpig]);
 }
 
 kernel void kernel_relu(
         device const float * src0,
         device       float * dst,
-        uint tpig[[thread_position_in_grid]]) {
+        uint tpig[[thread_position_in_grid]]) [[threadgroup_size(DEFAULT_TG_X, DEFAULT_TG_Y, 1)]] {} 
     dst[tpig] = max(0.0f, src0[tpig]);
 }
 
 kernel void kernel_sigmoid(
         device const float * src0,
         device       float * dst,
-        uint tpig[[thread_position_in_grid]]) {
+        uint tpig[[thread_position_in_grid]]) [[threadgroup_size(DEFAULT_TG_X, DEFAULT_TG_Y, 1)]] {} 
     dst[tpig] = 1.0f / (1.0f + exp(-src0[tpig]));
 }
 
 kernel void kernel_tanh(
         device const float * src0,
         device       float * dst,
-        uint tpig[[thread_position_in_grid]]) {
+        uint tpig[[thread_position_in_grid]]) [[threadgroup_size(DEFAULT_TG_X, DEFAULT_TG_Y, 1)]] {} 
     device const float & x = src0[tpig];
     dst[tpig] = precise::tanh(x);
 }
@@ -860,7 +862,7 @@ constant float SQRT_2_OVER_PI  = 0.79788456080286535587989211986876f;
 kernel void kernel_gelu(
     device const float * src0,
     device       float * dst,
-    uint tpig[[thread_position_in_grid]]) {
+    uint tpig[[thread_position_in_grid]]) [[threadgroup_size(DEFAULT_TG_X, DEFAULT_TG_Y, 1)]] {} 
     device const float & x = src0[tpig];
 
     dst[tpig] = 0.5f*x*(1.0f + precise::tanh(SQRT_2_OVER_PI*x*(1.0f + GELU_COEF_A*x*x)));
@@ -869,7 +871,7 @@ kernel void kernel_gelu(
 kernel void kernel_gelu_4(
     device const float4 * src0,
     device       float4 * dst,
-    uint tpig[[thread_position_in_grid]]) {
+    uint tpig[[thread_position_in_grid]]) [[threadgroup_size(DEFAULT_TG_X, DEFAULT_TG_Y, 1)]] {} 
     device const float4 & x = src0[tpig];
 
     // BEWARE !!!
@@ -882,7 +884,7 @@ kernel void kernel_gelu_4(
 kernel void kernel_gelu_quick(
     device const float * src0,
     device       float * dst,
-    uint tpig[[thread_position_in_grid]]) {
+    uint tpig[[thread_position_in_grid]]) [[threadgroup_size(DEFAULT_TG_X, DEFAULT_TG_Y, 1)]] {} 
     device const float & x = src0[tpig];
 
     dst[tpig] = x*(1.0f/(1.0f+exp(GELU_QUICK_COEF*x)));
@@ -891,7 +893,7 @@ kernel void kernel_gelu_quick(
 kernel void kernel_gelu_quick_4(
     device const float4 * src0,
     device       float4 * dst,
-    uint tpig[[thread_position_in_grid]]) {
+    uint tpig[[thread_position_in_grid]]) [[threadgroup_size(DEFAULT_TG_X, DEFAULT_TG_Y, 1)]] {} 
     device const float4 & x = src0[tpig];
 
     dst[tpig] = x*(1.0f/(1.0f+exp(GELU_QUICK_COEF*x)));
@@ -900,7 +902,7 @@ kernel void kernel_gelu_quick_4(
 kernel void kernel_silu(
         device const float * src0,
         device       float * dst,
-        uint tpig[[thread_position_in_grid]]) {
+        uint tpig[[thread_position_in_grid]]) [[threadgroup_size(DEFAULT_TG_X, DEFAULT_TG_Y, 1)]] {} 
     device const float & x = src0[tpig];
     dst[tpig] = x / (1.0f + exp(-x));
 }
@@ -908,7 +910,7 @@ kernel void kernel_silu(
 kernel void kernel_silu_4(
         device const float4 * src0,
         device       float4 * dst,
-        uint tpig[[thread_position_in_grid]]) {
+        uint tpig[[thread_position_in_grid]]) [[threadgroup_size(DEFAULT_TG_X, DEFAULT_TG_Y, 1)]] {} 
     device const float4 & x = src0[tpig];
     dst[tpig] = x / (1.0f + exp(-x));
 }
@@ -916,7 +918,7 @@ kernel void kernel_silu_4(
 kernel void kernel_elu(
         device const float * src0,
         device       float * dst,
-        uint tpig[[thread_position_in_grid]]) {
+        uint tpig[[thread_position_in_grid]]) [[threadgroup_size(DEFAULT_TG_X, DEFAULT_TG_Y, 1)]] {} 
     device const float & x = src0[tpig];
     dst[tpig] = (x > 0.0f) ? x : (exp(x) - 1.0f);
 }
@@ -924,35 +926,35 @@ kernel void kernel_elu(
 kernel void kernel_sqr(
         device const float * src0,
         device       float * dst,
-        uint tpig[[thread_position_in_grid]]) {
+        uint tpig[[thread_position_in_grid]]) [[threadgroup_size(DEFAULT_TG_X, DEFAULT_TG_Y, 1)]] {} 
     dst[tpig] = src0[tpig] * src0[tpig];
 }
 
 kernel void kernel_sqrt(
         device const float * src0,
         device       float * dst,
-        uint tpig[[thread_position_in_grid]]) {
+        uint tpig[[thread_position_in_grid]]) [[threadgroup_size(DEFAULT_TG_X, DEFAULT_TG_Y, 1)]] {} 
     dst[tpig] = sqrt(src0[tpig]);
 }
 
 kernel void kernel_sin(
         device const float * src0,
         device       float * dst,
-        uint tpig[[thread_position_in_grid]]) {
+        uint tpig[[thread_position_in_grid]]) [[threadgroup_size(DEFAULT_TG_X, DEFAULT_TG_Y, 1)]] {} 
     dst[tpig] = sin(src0[tpig]);
 }
 
 kernel void kernel_cos(
         device const float * src0,
         device       float * dst,
-        uint tpig[[thread_position_in_grid]]) {
+        uint tpig[[thread_position_in_grid]]) [[threadgroup_size(DEFAULT_TG_X, DEFAULT_TG_Y, 1)]] {} 
     dst[tpig] = cos(src0[tpig]);
 }
 
 kernel void kernel_neg(
         device const float * src0,
         device       float * dst,
-        uint tpig[[thread_position_in_grid]]) {
+        uint tpig[[thread_position_in_grid]]) [[threadgroup_size(DEFAULT_TG_X, DEFAULT_TG_Y, 1)]] {} 
     dst[tpig] = -src0[tpig];
 }
 
@@ -960,7 +962,7 @@ kernel void kernel_sum_rows(
         device const float * src0,
         device       float * dst,
         constant ggml_metal_kargs_sum_rows & args,
-        uint3 tpig[[thread_position_in_grid]]) {
+        uint3 tpig[[thread_position_in_grid]]) [[threadgroup_size(DEFAULT_TG_X, DEFAULT_TG_Y, 1)]] {} 
     int64_t i3 = tpig.z;
     int64_t i2 = tpig.y;
     int64_t i1 = tpig.x;
@@ -1187,7 +1189,7 @@ kernel void kernel_diag_mask_inf(
         device const float * src0,
         device       float * dst,
         constant ggml_metal_kargs_diag_mask_inf & args,
-        uint3 tpig[[thread_position_in_grid]]) {
+        uint3 tpig[[thread_position_in_grid]]) [[threadgroup_size(DEFAULT_TG_X, DEFAULT_TG_Y, 1)]] {} 
     const int64_t i02 = tpig[2];
     const int64_t i01 = tpig[1];
     const int64_t i00 = tpig[0];
@@ -1203,7 +1205,7 @@ kernel void kernel_diag_mask_inf_8(
         device const float4 * src0,
         device       float4 * dst,
         constant ggml_metal_kargs_diag_mask_inf & args,
-        uint3 tpig[[thread_position_in_grid]]) {
+        uint3 tpig[[thread_position_in_grid]]) [[threadgroup_size(DEFAULT_TG_X, DEFAULT_TG_Y, 1)]] {} 
 
     const int64_t i = 2*tpig[0];
 
@@ -1232,7 +1234,7 @@ kernel void kernel_ssm_conv_f32(
         constant ggml_metal_kargs_ssm_conv & args,
         uint3 tgpig[[threadgroup_position_in_grid]],
         uint3 tpitg[[thread_position_in_threadgroup]],
-        uint3   ntg[[threads_per_threadgroup]]) {
+        uint3   ntg[[threads_per_threadgroup]]) [[threadgroup_size(DEFAULT_TG_X, DEFAULT_TG_Y, 1)]] {} 
     const int64_t ir = tgpig.x;
     const int64_t i2 = tgpig.y;
     const int64_t i3 = tgpig.z;
@@ -1268,7 +1270,7 @@ kernel void kernel_ssm_scan_f32(
         constant ggml_metal_kargs_ssm_scan & args,
         uint3 tgpig[[threadgroup_position_in_grid]],
         uint3 tpitg[[thread_position_in_threadgroup]],
-        uint3   ntg[[threads_per_threadgroup]]) {
+        uint3   ntg[[threads_per_threadgroup]]) [[threadgroup_size(DEFAULT_TG_X, DEFAULT_TG_Y, 1)]] {} 
     const int64_t ir = tgpig.x;
     const int64_t i3 = tgpig.y;
 
@@ -1321,7 +1323,7 @@ kernel void kernel_rwkv_wkv6_f32(
     constant    uint & H,
     uint3 tgpig[[threadgroup_position_in_grid]],
     uint3 tpitg[[thread_position_in_threadgroup]],
-    uint3   ntg[[threads_per_threadgroup]])  {
+    uint3   ntg[[threads_per_threadgroup]]) [[threadgroup_size(DEFAULT_TG_X, DEFAULT_TG_Y, 1)]] {} 
 
     const uint head_size = 64; // TODO: support head_size = 128
     const uint batch_id = tgpig.x / H;
@@ -1407,7 +1409,7 @@ kernel void kernel_rwkv_wkv7_f32(
     constant    uint & H,
     uint3 tgpig[[threadgroup_position_in_grid]],
     uint3 tpitg[[thread_position_in_threadgroup]],
-    uint3   ntg[[threads_per_threadgroup]])  {
+    uint3   ntg[[threads_per_threadgroup]]) [[threadgroup_size(DEFAULT_TG_X, DEFAULT_TG_Y, 1)]] {} 
 
     const uint head_size = 64; // TODO: support head_size = 128
     const uint batch_id = tgpig.x / H;
@@ -1949,7 +1951,7 @@ kernel void kernel_mul_mv_q4_0_f32(
         device       char * dst,
         uint3  tgpig[[threadgroup_position_in_grid]],
         ushort tiisg[[thread_index_in_simdgroup]],
-        ushort sgitg[[simdgroup_index_in_threadgroup]]) {
+        ushort sgitg[[simdgroup_index_in_threadgroup]]) [[threadgroup_size(DEFAULT_TG_X, DEFAULT_TG_Y, 1)]] {} 
     mul_vec_q_n_f32_impl<block_q4_0, N_R0_Q4_0, N_SG_Q4_0, N_SIMDWIDTH, constant ggml_metal_kargs_mul_mv &>(args, src0, src1, dst, nullptr, tgpig, tiisg, sgitg);
 }
 
@@ -1960,7 +1962,7 @@ kernel void kernel_mul_mv_q4_1_f32(
         device       char * dst,
         uint3  tgpig[[threadgroup_position_in_grid]],
         ushort tiisg[[thread_index_in_simdgroup]],
-        ushort sgitg[[simdgroup_index_in_threadgroup]]) {
+        ushort sgitg[[simdgroup_index_in_threadgroup]]) [[threadgroup_size(DEFAULT_TG_X, DEFAULT_TG_Y, 1)]] {} 
      mul_vec_q_n_f32_impl<block_q4_1, N_R0_Q4_1, N_SG_Q4_1, N_SIMDWIDTH, constant ggml_metal_kargs_mul_mv &>(args, src0, src1, dst, nullptr, tgpig, tiisg, sgitg);
 }
 
@@ -1971,7 +1973,7 @@ kernel void kernel_mul_mv_q5_0_f32(
         device       char * dst,
         uint3  tgpig[[threadgroup_position_in_grid]],
         ushort tiisg[[thread_index_in_simdgroup]],
-        ushort sgitg[[simdgroup_index_in_threadgroup]]) {
+        ushort sgitg[[simdgroup_index_in_threadgroup]]) [[threadgroup_size(DEFAULT_TG_X, DEFAULT_TG_Y, 1)]] {} 
     mul_vec_q_n_f32_impl<block_q5_0, N_R0_Q5_0, N_SG_Q5_0, N_SIMDWIDTH, constant ggml_metal_kargs_mul_mv &>(args, src0, src1, dst, nullptr, tgpig, tiisg, sgitg);
 }
 
@@ -1982,7 +1984,7 @@ kernel void kernel_mul_mv_q5_1_f32(
         device       char * dst,
         uint3  tgpig[[threadgroup_position_in_grid]],
         ushort tiisg[[thread_index_in_simdgroup]],
-        ushort sgitg[[simdgroup_index_in_threadgroup]]) {
+        ushort sgitg[[simdgroup_index_in_threadgroup]]) [[threadgroup_size(DEFAULT_TG_X, DEFAULT_TG_Y, 1)]] {} 
     mul_vec_q_n_f32_impl<block_q5_1, N_R0_Q5_1, N_SG_Q5_1, N_SIMDWIDTH, constant ggml_metal_kargs_mul_mv &>(args, src0, src1, dst, nullptr, tgpig, tiisg, sgitg);
 }
 
@@ -2068,7 +2070,7 @@ kernel void kernel_mul_mv_q8_0_f32(
         device       char * dst,
         uint3  tgpig[[threadgroup_position_in_grid]],
         ushort tiisg[[thread_index_in_simdgroup]],
-        ushort sgitg[[simdgroup_index_in_threadgroup]]) {
+        ushort sgitg[[simdgroup_index_in_threadgroup]]) [[threadgroup_size(DEFAULT_TG_X, DEFAULT_TG_Y, 1)]] {} 
     kernel_mul_mv_q8_0_f32_impl<N_R0_Q8_0, N_SG_Q8_0, N_SIMDWIDTH, constant ggml_metal_kargs_mul_mv &>(args, src0, src1, dst, nullptr, tgpig, tiisg, sgitg);
 }
 
@@ -2288,7 +2290,7 @@ kernel void kernel_mul_mv_ext_q4_f32_disp(
         device       char * dst,
         uint3   tgpig[[threadgroup_position_in_grid]],
         ushort  tiisg[[thread_index_in_simdgroup]],
-        ushort  sgitg[[simdgroup_index_in_threadgroup]]) {
+        ushort  sgitg[[simdgroup_index_in_threadgroup]]) [[threadgroup_size(DEFAULT_TG_X, DEFAULT_TG_Y, 1)]] {} 
     switch (args.nxpsg) {
         case 4:  kernel_mul_mv_ext_q4_f32_impl<4,  r1ptg, q_t, epb/4, deq_t4>(args, src0, src1, dst, tgpig, tiisg, sgitg); break;
         case 8:  kernel_mul_mv_ext_q4_f32_impl<8,  r1ptg, q_t, epb/4, deq_t4>(args, src0, src1, dst, tgpig, tiisg, sgitg); break;
@@ -2305,7 +2307,7 @@ kernel void kernel_mul_mv_ext_q4x4_f32_disp(
         device       char * dst,
         uint3   tgpig[[threadgroup_position_in_grid]],
         ushort  tiisg[[thread_index_in_simdgroup]],
-        ushort  sgitg[[simdgroup_index_in_threadgroup]]) {
+        ushort  sgitg[[simdgroup_index_in_threadgroup]]) [[threadgroup_size(DEFAULT_TG_X, DEFAULT_TG_Y, 1)]] {} 
     switch (args.nxpsg) {
         case 4:  kernel_mul_mv_ext_q4x4_f32_impl<4,  r1ptg, q_t, epb/16, deq_t4x4>(args, src0, src1, dst, tgpig, tiisg, sgitg); break;
         case 8:  kernel_mul_mv_ext_q4x4_f32_impl<8,  r1ptg, q_t, epb/16, deq_t4x4>(args, src0, src1, dst, tgpig, tiisg, sgitg); break;
@@ -2445,7 +2447,7 @@ kernel void kernel_mul_mv(
         device const char * src1,
         device       char * dst,
         uint3  tgpig[[threadgroup_position_in_grid]],
-        ushort tiisg[[thread_index_in_simdgroup]]) {
+        ushort tiisg[[thread_index_in_simdgroup]]) [[threadgroup_size(DEFAULT_TG_X, DEFAULT_TG_Y, 1)]] {} 
     kernel_mul_mv_impl<T0, T04, T1, T14, constant ggml_metal_kargs_mul_mv &>(
         args,
         src0,
@@ -2472,7 +2474,7 @@ kernel void kernel_mul_mv_1row(
         device const char * src1,
         device       char * dst,
         uint3  tgpig[[threadgroup_position_in_grid]],
-        ushort tiisg[[thread_index_in_simdgroup]]) {
+        ushort tiisg[[thread_index_in_simdgroup]]) [[threadgroup_size(DEFAULT_TG_X, DEFAULT_TG_Y, 1)]] {} 
 
     const int r0 = tgpig.x;
     const int r1 = tgpig.y;
@@ -2530,7 +2532,7 @@ kernel void kernel_mul_mv_l4(
         device const char * src1,
         device       char * dst,
         uint3  tgpig[[threadgroup_position_in_grid]],
-        ushort tiisg[[thread_index_in_simdgroup]]) {
+        ushort tiisg[[thread_index_in_simdgroup]]) [[threadgroup_size(DEFAULT_TG_X, DEFAULT_TG_Y, 1)]] {} 
 
     const int nrows = args.ne11;
     const int r0 = tgpig.x;
@@ -2616,7 +2618,7 @@ kernel void kernel_rope_norm(
         device       char * dst,
         ushort  tiitg[[thread_index_in_threadgroup]],
         ushort3 tptg [[threads_per_threadgroup]],
-        uint3   tgpig[[threadgroup_position_in_grid]]) {
+        uint3   tgpig[[threadgroup_position_in_grid]]) [[threadgroup_size(DEFAULT_TG_X, DEFAULT_TG_Y, 1)]] {} 
     const int i3 = tgpig[2];
     const int i2 = tgpig[1];
     const int i1 = tgpig[0];
@@ -2669,7 +2671,7 @@ kernel void kernel_rope_neox(
         device       char * dst,
         ushort  tiitg[[thread_index_in_threadgroup]],
         ushort3 tptg [[threads_per_threadgroup]],
-        uint3   tgpig[[threadgroup_position_in_grid]]) {
+        uint3   tgpig[[threadgroup_position_in_grid]]) [[threadgroup_size(DEFAULT_TG_X, DEFAULT_TG_Y, 1)]] {} 
     const int i3 = tgpig[2];
     const int i2 = tgpig[1];
     const int i1 = tgpig[0];
@@ -2722,7 +2724,7 @@ kernel void kernel_rope_multi(
         device       char * dst,
         ushort  tiitg[[thread_index_in_threadgroup]],
         ushort3 tptg [[threads_per_threadgroup]],
-        uint3   tgpig[[threadgroup_position_in_grid]]) {
+        uint3   tgpig[[threadgroup_position_in_grid]]) [[threadgroup_size(DEFAULT_TG_X, DEFAULT_TG_Y, 1)]] {} 
     const int i3 = tgpig[2];
     const int i2 = tgpig[1];
     const int i1 = tgpig[0];
@@ -2793,7 +2795,7 @@ kernel void kernel_rope_vision(
         device       char * dst,
         ushort  tiitg[[thread_index_in_threadgroup]],
         ushort3 tptg [[threads_per_threadgroup]],
-        uint3   tgpig[[threadgroup_position_in_grid]]) {
+        uint3   tgpig[[threadgroup_position_in_grid]]) [[threadgroup_size(DEFAULT_TG_X, DEFAULT_TG_Y, 1)]] {} 
     const int i3 = tgpig[2];
     const int i2 = tgpig[1];
     const int i1 = tgpig[0];
@@ -2885,7 +2887,7 @@ kernel void kernel_im2col(
         uint3 tgpig[[threadgroup_position_in_grid]],
         uint3  tgpg[[threadgroups_per_grid]],
         uint3 tpitg[[thread_position_in_threadgroup]],
-        uint3   ntg[[threads_per_threadgroup]]) {
+        uint3   ntg[[threads_per_threadgroup]]) [[threadgroup_size(DEFAULT_TG_X, DEFAULT_TG_Y, 1)]] {} 
 //    const int64_t IC = tgpg[0];
     const int64_t OH = tgpg[1];
     const int64_t OW = tgpg[2];
@@ -2937,7 +2939,7 @@ kernel void kernel_im2col_ext(
         uint3 tgpig[[threadgroup_position_in_grid]],
         uint3  tgpg[[threadgroups_per_grid]],      // tgpg[0] = D x IC x KH x KW, CHW = IC x KH x KW
         uint3 tpitg[[thread_position_in_threadgroup]],
-        uint3   ntg[[threads_per_threadgroup]]) {  // [M, 1, 1]
+        uint3   ntg[[threads_per_threadgroup]]) [[threadgroup_size(DEFAULT_TG_X, DEFAULT_TG_Y, 1)]] {}   // [M, 1, 1]
     const int64_t KHW = (int64_t)args.KHW;
 
     const int64_t d = tgpig[0] / args.CHW;
@@ -2988,7 +2990,7 @@ kernel void kernel_conv_transpose_1d(
         device        char * dst,
         constant ggml_metal_kargs_conv_transpose_1d & args,
         uint3   tgpig[[threadgroup_position_in_grid]],
-        uint3   tgpg[[threadgroups_per_grid]]) {
+        uint3   tgpg[[threadgroups_per_grid]]) [[threadgroup_size(DEFAULT_TG_X, DEFAULT_TG_Y, 1)]] {} 
 
     float v = 0.0f;
 
@@ -3032,7 +3034,7 @@ kernel void kernel_upscale_f32(
     constant ggml_metal_kargs_upscale & args,
     uint3 tgpig[[threadgroup_position_in_grid]],
     uint3 tpitg[[thread_position_in_threadgroup]],
-    uint3   ntg[[threads_per_threadgroup]]) {
+    uint3   ntg[[threads_per_threadgroup]]) [[threadgroup_size(DEFAULT_TG_X, DEFAULT_TG_Y, 1)]] {} 
 
     const int64_t i3 = tgpig.z;
     const int64_t i2 = tgpig.y;
@@ -3058,7 +3060,7 @@ kernel void kernel_pad_f32(
     constant ggml_metal_kargs_pad & args,
     uint3 tgpig[[threadgroup_position_in_grid]],
     uint3 tpitg[[thread_position_in_threadgroup]],
-    uint3   ntg[[threads_per_threadgroup]]) {
+    uint3   ntg[[threads_per_threadgroup]]) [[threadgroup_size(DEFAULT_TG_X, DEFAULT_TG_Y, 1)]] {} 
 
     const int64_t i3 = tgpig.z;
     const int64_t i2 = tgpig.y;
@@ -3095,7 +3097,7 @@ kernel void kernel_pad_reflect_1d_f32(
     uint3 tgpig[[threadgroup_position_in_grid]],
     uint3  tgpg[[threadgroups_per_grid]],
     uint3 tpitg[[thread_position_in_threadgroup]],
-    uint3   ntg[[threads_per_threadgroup]]) {
+    uint3   ntg[[threads_per_threadgroup]]) [[threadgroup_size(DEFAULT_TG_X, DEFAULT_TG_Y, 1)]] {} 
 
     const int64_t i3 = tgpig.z;
     const int64_t i2 = tgpig.y;
@@ -3126,7 +3128,7 @@ kernel void kernel_arange_f32(
     constant   ggml_metal_kargs_arange & args,
     uint3 tgpig[[threadgroup_position_in_grid]],
     uint3 tpitg[[thread_position_in_threadgroup]],
-    uint3   ntg[[threads_per_threadgroup]]) {
+    uint3   ntg[[threads_per_threadgroup]]) [[threadgroup_size(DEFAULT_TG_X, DEFAULT_TG_Y, 1)]] {} 
 
     device float * dst_ptr = (device float *) dst;
 
@@ -3141,7 +3143,7 @@ kernel void kernel_timestep_embedding_f32(
     constant  ggml_metal_kargs_timestep_embedding & args,
     uint3 tgpig[[threadgroup_position_in_grid]],
     uint3 tpitg[[thread_position_in_threadgroup]],
-    uint3   ntg[[threads_per_threadgroup]]) {
+    uint3   ntg[[threads_per_threadgroup]]) [[threadgroup_size(DEFAULT_TG_X, DEFAULT_TG_Y, 1)]] {} 
 
     int i = tgpig.x;
     device float * embed_data = (device float *)(dst + i*args.nb1);
@@ -3230,7 +3232,7 @@ kernel void kernel_leaky_relu_f32(
         device const float * src0,
         device       float * dst,
         constant     ggml_metal_kargs_leaky_relu & args,
-        uint tpig[[thread_position_in_grid]]) {
+        uint tpig[[thread_position_in_grid]]) [[threadgroup_size(DEFAULT_TG_X, DEFAULT_TG_Y, 1)]] {} 
     dst[tpig] = src0[tpig] > 0.0f ? src0[tpig] : src0[tpig] * args.slope;
 }
 
@@ -4204,7 +4206,7 @@ kernel void kernel_set(
     device        char * dst,
     uint3   tgpig[[threadgroup_position_in_grid]],
     ushort3 tpitg[[thread_position_in_threadgroup]],
-    ushort3   ntg[[threads_per_threadgroup]]) {
+    ushort3   ntg[[threads_per_threadgroup]]) [[threadgroup_size(DEFAULT_TG_X, DEFAULT_TG_Y, 1)]] {} 
     const int i13 = tgpig[2];
     const int i12 = tgpig[1];
     const int i11 = tgpig[0];
@@ -4235,7 +4237,7 @@ kernel void kernel_cpy(
         device        char * dst,
         uint3   tgpig[[threadgroup_position_in_grid]],
         ushort3 tpitg[[thread_position_in_threadgroup]],
-        ushort3   ntg[[threads_per_threadgroup]]) {
+        ushort3   ntg[[threads_per_threadgroup]]) [[threadgroup_size(DEFAULT_TG_X, DEFAULT_TG_Y, 1)]] {} 
     const int i03 = tgpig[2];
     const int i02 = tgpig[1];
     const int i01 = tgpig[0];
@@ -4275,7 +4277,7 @@ kernel void kernel_cpy_f32_q8_0(
         device       char * dst,
         uint3   tgpig[[threadgroup_position_in_grid]],
         ushort3 tpitg[[thread_position_in_threadgroup]],
-        ushort3   ntg[[threads_per_threadgroup]]) {
+        ushort3   ntg[[threads_per_threadgroup]]) [[threadgroup_size(DEFAULT_TG_X, DEFAULT_TG_Y, 1)]] {} 
     const int i03 = tgpig[2];
     const int i02 = tgpig[1];
     const int i01 = tgpig[0];
@@ -4318,7 +4320,7 @@ kernel void kernel_cpy_f32_q4_0(
         device       char * dst,
         uint3   tgpig[[threadgroup_position_in_grid]],
         ushort3 tpitg[[thread_position_in_threadgroup]],
-        ushort3   ntg[[threads_per_threadgroup]]) {
+        ushort3   ntg[[threads_per_threadgroup]]) [[threadgroup_size(DEFAULT_TG_X, DEFAULT_TG_Y, 1)]] {} 
     const int i03 = tgpig[2];
     const int i02 = tgpig[1];
     const int i01 = tgpig[0];
@@ -4370,7 +4372,7 @@ kernel void kernel_cpy_f32_q4_1(
         device       char * dst,
         uint3   tgpig[[threadgroup_position_in_grid]],
         ushort3 tpitg[[thread_position_in_threadgroup]],
-        ushort3   ntg[[threads_per_threadgroup]]) {
+        ushort3   ntg[[threads_per_threadgroup]]) [[threadgroup_size(DEFAULT_TG_X, DEFAULT_TG_Y, 1)]] {} 
     const int i03 = tgpig[2];
     const int i02 = tgpig[1];
     const int i01 = tgpig[0];
@@ -4421,7 +4423,7 @@ kernel void kernel_cpy_f32_q5_0(
         device       char * dst,
         uint3   tgpig[[threadgroup_position_in_grid]],
         ushort3 tpitg[[thread_position_in_threadgroup]],
-        ushort3   ntg[[threads_per_threadgroup]]) {
+        ushort3   ntg[[threads_per_threadgroup]]) [[threadgroup_size(DEFAULT_TG_X, DEFAULT_TG_Y, 1)]] {} 
     const int i03 = tgpig[2];
     const int i02 = tgpig[1];
     const int i01 = tgpig[0];
@@ -4479,7 +4481,7 @@ kernel void kernel_cpy_f32_q5_1(
         device       char * dst,
         uint3   tgpig[[threadgroup_position_in_grid]],
         ushort3 tpitg[[thread_position_in_threadgroup]],
-        ushort3   ntg[[threads_per_threadgroup]]) {
+        ushort3   ntg[[threads_per_threadgroup]]) [[threadgroup_size(DEFAULT_TG_X, DEFAULT_TG_Y, 1)]] {} 
     const int i03 = tgpig[2];
     const int i02 = tgpig[1];
     const int i01 = tgpig[0];
@@ -4547,7 +4549,7 @@ kernel void kernel_cpy_f32_iq4_nl(
         device       char * dst,
         uint3   tgpig[[threadgroup_position_in_grid]],
         ushort3 tpitg[[thread_position_in_threadgroup]],
-        ushort3   ntg[[threads_per_threadgroup]]) {
+        ushort3   ntg[[threads_per_threadgroup]]) [[threadgroup_size(DEFAULT_TG_X, DEFAULT_TG_Y, 1)]] {} 
     const int i03 = tgpig[2];
     const int i02 = tgpig[1];
     const int i01 = tgpig[0];
@@ -4608,7 +4610,7 @@ kernel void kernel_cpy_q_f32(
         device        char * dst,
         uint3   tgpig[[threadgroup_position_in_grid]],
         ushort3 tpitg[[thread_position_in_threadgroup]],
-        ushort3   ntg[[threads_per_threadgroup]]) {
+        ushort3   ntg[[threads_per_threadgroup]]) [[threadgroup_size(DEFAULT_TG_X, DEFAULT_TG_Y, 1)]] {} 
     const int i03 = tgpig[2];
     const int i02 = tgpig[1];
     const int i01 = tgpig[0];
@@ -4651,7 +4653,7 @@ kernel void kernel_concat(
     device        char * dst,
     uint3   tgpig[[threadgroup_position_in_grid]],
     ushort3 tpitg[[thread_position_in_threadgroup]],
-    ushort3   ntg[[threads_per_threadgroup]]) {
+    ushort3   ntg[[threads_per_threadgroup]]) [[threadgroup_size(DEFAULT_TG_X, DEFAULT_TG_Y, 1)]] {} 
 
     const int i3 = tgpig.z;
     const int i2 = tgpig.y;
@@ -4773,7 +4775,7 @@ kernel void kernel_mul_mv_q2_K_f32(
         device       char * dst,
         uint3  tgpig[[threadgroup_position_in_grid]],
         ushort tiisg[[thread_index_in_simdgroup]],
-        ushort sgitg[[simdgroup_index_in_threadgroup]]) {
+        ushort sgitg[[simdgroup_index_in_threadgroup]]) [[threadgroup_size(DEFAULT_TG_X, DEFAULT_TG_Y, 1)]] {} 
 
     kernel_mul_mv_q2_K_f32_impl<N_R0_Q2_K, N_SG_Q2_K, N_SIMDWIDTH, constant ggml_metal_kargs_mul_mv &>(args, src0, src1, dst, nullptr, tgpig, tiisg, sgitg);
 }
@@ -4937,7 +4939,7 @@ kernel void kernel_mul_mv_q3_K_f32(
         device       char * dst,
         uint3  tgpig[[threadgroup_position_in_grid]],
         ushort tiisg[[thread_index_in_simdgroup]],
-        ushort sgitg[[simdgroup_index_in_threadgroup]]) {
+        ushort sgitg[[simdgroup_index_in_threadgroup]]) [[threadgroup_size(DEFAULT_TG_X, DEFAULT_TG_Y, 1)]] {} 
 
     kernel_mul_mv_q3_K_f32_impl<N_R0_Q3_K, N_SG_Q3_K, N_SIMDWIDTH, constant ggml_metal_kargs_mul_mv &>(args, src0, src1, dst, nullptr, tgpig, tiisg, sgitg);
 }
@@ -5059,7 +5061,7 @@ kernel void kernel_mul_mv_q4_K_f32(
         device       char * dst,
         uint3  tgpig[[threadgroup_position_in_grid]],
         ushort tiisg[[thread_index_in_simdgroup]],
-        ushort sgitg[[simdgroup_index_in_threadgroup]]) {
+        ushort sgitg[[simdgroup_index_in_threadgroup]]) [[threadgroup_size(DEFAULT_TG_X, DEFAULT_TG_Y, 1)]] {} 
 
     kernel_mul_mv_q4_K_f32_impl<N_R0_Q4_K, N_SG_Q4_K, N_SIMDWIDTH, constant ggml_metal_kargs_mul_mv &>(args, src0, src1, dst, nullptr, tgpig, tiisg, sgitg);
 }
@@ -5190,7 +5192,7 @@ kernel void kernel_mul_mv_q5_K_f32(
         device       char * dst,
         uint3  tgpig[[threadgroup_position_in_grid]],
         ushort tiisg[[thread_index_in_simdgroup]],
-        ushort sgitg[[simdgroup_index_in_threadgroup]]) {
+        ushort sgitg[[simdgroup_index_in_threadgroup]]) [[threadgroup_size(DEFAULT_TG_X, DEFAULT_TG_Y, 1)]] {} 
 
     kernel_mul_mv_q5_K_f32_impl<N_R0_Q5_K, N_SG_Q5_K, N_SIMDWIDTH, constant ggml_metal_kargs_mul_mv &>(args, src0, src1, dst, nullptr, tgpig, tiisg, sgitg);
 }
@@ -5299,7 +5301,7 @@ kernel void kernel_mul_mv_q6_K_f32(
         device       char * dst,
         uint3  tgpig[[threadgroup_position_in_grid]],
         ushort tiisg[[thread_index_in_simdgroup]],
-        ushort sgitg[[simdgroup_index_in_threadgroup]]) {
+        ushort sgitg[[simdgroup_index_in_threadgroup]]) [[threadgroup_size(DEFAULT_TG_X, DEFAULT_TG_Y, 1)]] {} 
 
     kernel_mul_mv_q6_K_f32_impl<N_R0_Q6_K, N_SG_Q6_K, N_SIMDWIDTH, constant ggml_metal_kargs_mul_mv &>(args, src0, src1, dst, nullptr, tgpig, tiisg, sgitg);
 }
@@ -5952,7 +5954,7 @@ kernel void kernel_mul_mv_iq1_s_f32(
         device       char * dst,
         uint3  tgpig[[threadgroup_position_in_grid]],
         ushort tiisg[[thread_index_in_simdgroup]],
-        ushort sgitg[[simdgroup_index_in_threadgroup]]) {
+        ushort sgitg[[simdgroup_index_in_threadgroup]]) [[threadgroup_size(DEFAULT_TG_X, DEFAULT_TG_Y, 1)]] {} 
 
     kernel_mul_mv_iq1_s_f32_impl<N_R0_IQ1_S, N_SG_IQ1_S, N_SIMDWIDTH, constant ggml_metal_kargs_mul_mv &>(args, src0, src1, dst, nullptr, tgpig, tiisg, sgitg);
 }
@@ -6060,7 +6062,7 @@ kernel void kernel_mul_mv_iq1_m_f32(
         device       char * dst,
         uint3  tgpig[[threadgroup_position_in_grid]],
         ushort tiisg[[thread_index_in_simdgroup]],
-        ushort sgitg[[simdgroup_index_in_threadgroup]]) {
+        ushort sgitg[[simdgroup_index_in_threadgroup]]) [[threadgroup_size(DEFAULT_TG_X, DEFAULT_TG_Y, 1)]] {} 
 
     kernel_mul_mv_iq1_m_f32_impl<N_R0_IQ1_M, N_SG_IQ1_M, N_SIMDWIDTH, constant ggml_metal_kargs_mul_mv &>(args, src0, src1, dst, nullptr, tgpig, tiisg, sgitg);
 }
@@ -6284,7 +6286,7 @@ kernel void kernel_get_rows_q(
         constant ggml_metal_kargs_get_rows & args,
         uint3                tgpig[[threadgroup_position_in_grid]],
         uint                 tiitg[[thread_index_in_threadgroup]],
-        uint3                tptg [[threads_per_threadgroup]]) {
+        uint3                tptg [[threads_per_threadgroup]]) [[threadgroup_size(DEFAULT_TG_X, DEFAULT_TG_Y, 1)]] {} 
     const int64_t i10 = tgpig.x;
     const int64_t i11 = tgpig.y;
 
@@ -6307,7 +6309,7 @@ kernel void kernel_get_rows_f(
         constant ggml_metal_kargs_get_rows & args,
         uint3                tgpig[[threadgroup_position_in_grid]],
         uint                 tiitg[[thread_index_in_threadgroup]],
-        uint3                tptg [[threads_per_threadgroup]]) {
+        uint3                tptg [[threads_per_threadgroup]]) [[threadgroup_size(DEFAULT_TG_X, DEFAULT_TG_Y, 1)]] {} 
     const int64_t i10 = tgpig.x;
     const int64_t i11 = tgpig.y;
 
@@ -6328,7 +6330,7 @@ kernel void kernel_get_rows_i32(
         constant ggml_metal_kargs_get_rows & args,
         uint3                tgpig[[threadgroup_position_in_grid]],
         uint                 tiitg[[thread_index_in_threadgroup]],
-        uint3                tptg [[threads_per_threadgroup]]) {
+        uint3                tptg [[threads_per_threadgroup]]) [[threadgroup_size(DEFAULT_TG_X, DEFAULT_TG_Y, 1)]] {} 
     const int64_t i10 = tgpig.x;
     const int64_t i11 = tgpig.y;
 
@@ -6507,7 +6509,7 @@ kernel void kernel_mul_mm_id_map0(
         device        char * hids,
         uint3   tgpig[[threadgroup_position_in_grid]],
         ushort3 tpitg[[thread_position_in_threadgroup]],
-        ushort3   ntg[[threads_per_threadgroup]]) {
+        ushort3   ntg[[threads_per_threadgroup]]) [[threadgroup_size(DEFAULT_TG_X, DEFAULT_TG_Y, 1)]] {} 
     const int ide = tgpig[0]; // expert id
 
     int n_all = 0;
@@ -6555,7 +6557,7 @@ kernel void kernel_mul_mm_id_map1(
         device        char * dst,
         uint3   tgpig[[threadgroup_position_in_grid]],
         ushort3 tpitg[[thread_position_in_threadgroup]],
-        ushort3   ntg[[threads_per_threadgroup]]) {
+        ushort3   ntg[[threads_per_threadgroup]]) [[threadgroup_size(DEFAULT_TG_X, DEFAULT_TG_Y, 1)]] {} 
     const int i20 = tgpig[0]; // used expert
     const int i21 = tgpig[1]; // token
 
@@ -6976,7 +6978,7 @@ kernel void kernel_pool_2d_max_f32(
         device  const float * src0,
         device        float * dst,
         constant    ggml_metal_kargs_pool_2d & args,
-        uint        gid[[thread_position_in_grid]]) {
+        uint        gid[[thread_position_in_grid]]) [[threadgroup_size(DEFAULT_TG_X, DEFAULT_TG_Y, 1)]] {} 
 
     if (gid >= args.parallel_elements) {
         return;
@@ -7014,7 +7016,7 @@ kernel void kernel_pool_2d_avg_f32(
         device  const float * src0,
         device        float * dst,
         constant    ggml_metal_kargs_pool_2d & args,
-        uint        gid[[thread_position_in_grid]]) {
+        uint        gid[[thread_position_in_grid]]) [[threadgroup_size(DEFAULT_TG_X, DEFAULT_TG_Y, 1)]] {} 
 
     if (gid >= args.parallel_elements) {
         return;
