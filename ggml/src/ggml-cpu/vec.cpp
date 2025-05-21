@@ -738,3 +738,28 @@ ggml_float ggml_vec_log_soft_max_f32(const int n, float * y, const float * x, fl
                 // Let's stick to the current return type and behavior observed.
                 // The second loop applies the log_sum.
 }
+
+void ggml_vec_sqrt_f32(const int n, float * y, const float * x) {
+    int i = 0;
+#if defined(__AVX512F__)
+    for (; i + 15 < n; i += 16) {
+        _mm512_storeu_ps(y + i, _mm512_sqrt_ps(_mm512_loadu_ps(x + i)));
+    }
+#elif defined(__AVX2__) && defined(__FMA__)
+    for (; i + 7 < n; i += 8) {
+        _mm256_storeu_ps(y + i, _mm256_sqrt_ps(_mm256_loadu_ps(x + i)));
+    }
+#elif defined(__SSE2__)
+    for (; i + 3 < n; i += 4) {
+        _mm_storeu_ps(y + i, _mm_sqrt_ps(_mm_loadu_ps(x + i)));
+    }
+#elif defined(__ARM_NEON) && defined(__aarch64__)
+    for (; i + 3 < n; i += 4) {
+        vst1q_f32(y + i, vsqrtq_f32(vld1q_f32(x + i)));
+    }
+#endif
+    // Scalar loop for leftovers or if no SIMD
+    for (; i < n; ++i) {
+        y[i] = sqrtf(x[i]);
+    }
+}
