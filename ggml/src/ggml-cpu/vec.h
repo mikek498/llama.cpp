@@ -412,10 +412,11 @@ inline static void ggml_vec_hardswish_f16 (const int n, ggml_fp16_t * y, const g
         y[i] = GGML_FP32_TO_FP16(v * fminf(1.0f, fmaxf(0.0f, (v + 3.0f) / 6.0f)));
     }
 }
-inline static void ggml_vec_hardsigmoid_f32 (const int n, float * y, const float * x) { for (int i = 0; i < n; ++i) y[i] = fminf(1.0f, fmaxf(0.0f, (x[i] + 3.0f) / 6.0f)); }
+void ggml_vec_hardsigmoid_f32 (const int n, float * y, const float * x);
 inline static void ggml_vec_hardsigmoid_f16 (const int n, ggml_fp16_t * y, const ggml_fp16_t * x) {
     for (int i = 0; i < n; ++i) {
-        y[i] = GGML_FP32_TO_FP16(fminf(1.0f, fmaxf(0.0f, (GGML_FP16_TO_FP32(x[i]) + 3.0f) / 6.0f)));
+        float v = GGML_FP16_TO_FP32(x[i]);
+        y[i] = GGML_FP32_TO_FP16(fminf(1.0f, fmaxf(0.0f, (v + 3.0f) / 6.0f)));
     }
 }
 inline static void ggml_vec_exp_f32 (const int n, float * y, const float * x) { for (int i = 0; i < n; ++i) y[i] = expf(x[i]); }

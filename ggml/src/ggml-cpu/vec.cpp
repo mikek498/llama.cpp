@@ -795,3 +795,64 @@ void ggml_vec_abs_f32(const int n, float * y, const float * x) {
         y[i] = fabsf(x[i]);
     }
 }
+
+void ggml_vec_hardsigmoid_f32(const int n, float * y, const float * x) {
+    int i = 0;
+#if defined(__AVX512F__)
+    const __m512 v_zero = _mm512_set1_ps(0.0f);
+    const __m512 v_one = _mm512_set1_ps(1.0f);
+    const __m512 v_three = _mm512_set1_ps(3.0f);
+    const __m512 v_six_inv = _mm512_set1_ps(1.0f / 6.0f);
+    for (; i + 15 < n; i += 16) {
+        __m512 vx = _mm512_loadu_ps(x + i);
+        vx = _mm512_add_ps(vx, v_three);
+        vx = _mm512_mul_ps(vx, v_six_inv);
+        vx = _mm512_max_ps(v_zero, vx);
+        vx = _mm512_min_ps(v_one, vx);
+        _mm512_storeu_ps(y + i, vx);
+    }
+#elif defined(__AVX2__) && defined(__FMA__)
+    const __m256 v_zero = _mm256_set1_ps(0.0f);
+    const __m256 v_one = _mm256_set1_ps(1.0f);
+    const __m256 v_three = _mm256_set1_ps(3.0f);
+    const __m256 v_six_inv = _mm256_set1_ps(1.0f / 6.0f);
+    for (; i + 7 < n; i += 8) {
+        __m256 vx = _mm256_loadu_ps(x + i);
+        vx = _mm256_add_ps(vx, v_three);
+        vx = _mm256_mul_ps(vx, v_six_inv);
+        vx = _mm256_max_ps(v_zero, vx);
+        vx = _mm256_min_ps(v_one, vx);
+        _mm256_storeu_ps(y + i, vx);
+    }
+#elif defined(__SSE2__)
+    const __m128 v_zero = _mm_set1_ps(0.0f);
+    const __m128 v_one = _mm_set1_ps(1.0f);
+    const __m128 v_three = _mm_set1_ps(3.0f);
+    const __m128 v_six_inv = _mm_set1_ps(1.0f / 6.0f);
+    for (; i + 3 < n; i += 4) {
+        __m128 vx = _mm_loadu_ps(x + i);
+        vx = _mm_add_ps(vx, v_three);
+        vx = _mm_mul_ps(vx, v_six_inv);
+        vx = _mm_max_ps(v_zero, vx);
+        vx = _mm_min_ps(v_one, vx);
+        _mm_storeu_ps(y + i, vx);
+    }
+#elif defined(__ARM_NEON) && defined(__aarch64__)
+    const float32x4_t v_zero = vdupq_n_f32(0.0f);
+    const float32x4_t v_one = vdupq_n_f32(1.0f);
+    const float32x4_t v_three = vdupq_n_f32(3.0f);
+    const float32x4_t v_six_inv = vdupq_n_f32(1.0f / 6.0f);
+    for (; i + 3 < n; i += 4) {
+        float32x4_t vx = vld1q_f32(x + i);
+        vx = vaddq_f32(vx, v_three);
+        vx = vmulq_f32(vx, v_six_inv);
+        vx = vmaxq_f32(v_zero, vx);
+        vx = vminq_f32(v_one, vx);
+        vst1q_f32(y + i, vx);
+    }
+#endif
+    // Scalar loop for leftovers or if no SIMD
+    for (; i < n; ++i) {
+        y[i] = fminf(1.0f, fmaxf(0.0f, (x[i] + 3.0f) / 6.0f));
+    }
+}
