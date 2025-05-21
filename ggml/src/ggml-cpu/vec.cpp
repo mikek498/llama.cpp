@@ -433,6 +433,14 @@ void ggml_vec_sqr_f32(const int n, float * y, const float * x) {
 }
 
 void ggml_vec_set_f32(const int n, float * x, const float v) {
+#if defined(__APPLE__) && defined(__aarch64__)
+    // Use optimized kernel if 64-byte aligned and n is large enough
+    if ((((uintptr_t)x) % 64 == 0) && n >= 64) {
+        union { float f; unsigned int u; } uval = { v };
+        _mlk_f32_fill(x, n, uval.u);
+        return;
+    }
+#endif
     int i = 0;
 #if defined(__AVX512F__)
     const __m512 vv = _mm512_set1_ps(v);

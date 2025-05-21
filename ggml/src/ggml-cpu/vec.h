@@ -797,6 +797,10 @@ inline static void ggml_vec_argmax_f32(const int n, int * s, const float * x) {
     *s = idx;
 }
 
+#if defined(__APPLE__) && defined(__aarch64__)
+void _mlk_f32_fill(void *dst, int n, unsigned int value);
+#endif
+
 #ifdef __cplusplus
 }
 #endif
