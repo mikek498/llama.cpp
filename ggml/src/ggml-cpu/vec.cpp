@@ -515,6 +515,35 @@ void ggml_vec_acc_f32(const int n, float * y, const float * x) {
     }
 }
 
+void ggml_vec_acc1_f32(const int n, float * y, const float v) {
+    int i = 0;
+#if defined(__AVX512F__)
+    const __m512 vv = _mm512_set1_ps(v);
+    for (; i + 15 < n; i += 16) {
+        _mm512_storeu_ps(y + i, _mm512_add_ps(_mm512_loadu_ps(y + i), vv));
+    }
+#elif defined(__AVX2__) && defined(__FMA__)
+    const __m256 vv = _mm256_set1_ps(v);
+    for (; i + 7 < n; i += 8) {
+        _mm256_storeu_ps(y + i, _mm256_add_ps(_mm256_loadu_ps(y + i), vv));
+    }
+#elif defined(__SSE2__)
+    const __m128 vv = _mm_set1_ps(v);
+    for (; i + 3 < n; i += 4) {
+        _mm_storeu_ps(y + i, _mm_add_ps(_mm_loadu_ps(y + i), vv));
+    }
+#elif defined(__ARM_NEON) && defined(__aarch64__)
+    const float32x4_t vv = vdupq_n_f32(v);
+    for (; i + 3 < n; i += 4) {
+        vst1q_f32(y + i, vaddq_f32(vld1q_f32(y + i), vv));
+    }
+#endif
+    // Scalar loop for leftovers or if no SIMD
+    for (; i < n; ++i) {
+        y[i] += v;
+    }
+}
+
 // Definition for ggml_vec_relu_f32 (declared in vec.h)
 void ggml_vec_relu_f32(const int n, float * y, const float * x) {
     int i = 0;
