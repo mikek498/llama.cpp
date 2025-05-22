@@ -4787,7 +4787,24 @@ static bool ggml_metal_encode_node(
                     nsgmax /= 2;
 
                     // simdgroups per threadgroup (a.k.a. warps)
-                    const int64_t nsg = ne01 <= nqptg ? MAX(4, MIN(nsgmax, MIN(ne11/ncpsg, (int64_t) pipeline.maxTotalThreadsPerThreadgroup/32))) : 4;
+                    // Calculate nsg (SIMDgroups per threadgroup)
+                    // Original line:
+                    // const int64_t nsg = ne01 <= nqptg ? MAX(4, MIN(nsgmax, MIN(ne11/ncpsg, (int64_t) pipeline.maxTotalThreadsPerThreadgroup/32))) : 4;
+
+                    int64_t nsg_fallback = 4;
+                    // Check for Apple Silicon GPU (M1 family and newer are Apple7+)
+                    // MTLGPUFamilyApple7 is a reasonable proxy for M1 Max and Ultra for this heuristic.
+                    // M1 Pro/Max/Ultra have more execution units and might benefit from a higher nsg.
+                    if ([device supportsFamily:MTLGPUFamilyApple7]) {
+                        // Set a higher fallback for nsg, e.g., 8, but ensure it's capped by device capabilities.
+                        // nsgmax is derived from maxThreadgroupMemoryLength.
+                        // pipeline.maxTotalThreadsPerThreadgroup/32 is the hardware limit for SIMDgroups in a threadgroup.
+                        nsg_fallback = MIN(8, MIN(nsgmax, (int64_t)pipeline.maxTotalThreadsPerThreadgroup/32));
+                        // Ensure the fallback is at least the original minimum of 4, in case the above calculation results in less.
+                        nsg_fallback = MAX(4, nsg_fallback);
+                    }
+
+                    const int64_t nsg = ne01 <= nqptg ? MAX(4, MIN(nsgmax, MIN(ne11/ncpsg, (int64_t) pipeline.maxTotalThreadsPerThreadgroup/32))) : nsg_fallback;
 
                     const size_t smem = FATTN_SMEM(nsg);
 
