@@ -327,28 +327,55 @@ void dequantize_q3_K(device const block_q3_K *xb, short il, thread type4x4 & reg
     }
 }
 
-static inline uchar2 get_scale_min_k4_just2(int j, int k, device const uchar * q) {
-    return j < 4 ? uchar2{uchar(q[j+0+k] & 63), uchar(q[j+4+k] & 63)}
-                 : uchar2{uchar((q[j+4+k] & 0xF) | ((q[j-4+k] & 0xc0) >> 2)), uchar((q[j+4+k] >> 4) | ((q[j-0+k] & 0xc0) >> 2))};
-}
-
 template <typename type4x4>
 void dequantize_q4_K(device const block_q4_K * xb, short il, thread type4x4 & reg) {
-    device const uchar * q = xb->qs;
+    device const uchar * q_ptr = xb->qs;
 
-    short is = (il/4) * 2;
-    q = q + (il/4) * 32 + 16 * (il&1);
-    il = il & 3;
-    const uchar2 sc = get_scale_min_k4_just2(is, il/2, xb->scales);
-    const float d   = il < 2 ? xb->d : xb->d / 16.h;
-    const float min = xb->dmin;
-    const float dl = d * sc[0];
-    const float ml = min * sc[1];
-
-    const ushort mask = il < 2 ? 0x0F : 0xF0;
-    for (int i = 0; i < 16; ++i) {
-        reg[i/4][i%4] = dl * (q[i] & mask) - ml;
+    short is_val = (il/4) * 2;
+    // This pointer adjustment for qs uses the 'il' parameter and should remain.
+    q_ptr = q_ptr + (il/4) * 32 + 16 * (il&1);
+    
+    // Inlined logic for sc:
+    device const uchar * scales_ptr = xb->scales;
+    short k_for_scales = il/2;
+    uchar sc_val0, sc_val1;
+    // The 'is_val' variable here is derived from the 'il' parameter of dequantize_q4_K.
+    if (is_val < 4) {
+        sc_val0 = scales_ptr[is_val + 0 + k_for_scales] & 63;
+        sc_val1 = scales_ptr[is_val + 4 + k_for_scales] & 63;
+    } else {
+        sc_val0 = (scales_ptr[is_val + 4 + k_for_scales] & 0xF) | ((scales_ptr[is_val - 4 + k_for_scales] & 0xc0) >> 2);
+        sc_val1 = (scales_ptr[is_val + 4 + k_for_scales] >> 4) | ((scales_ptr[is_val - 0 + k_for_scales] & 0xc0) >> 2);
     }
+    const uchar2 sc = uchar2(sc_val0, sc_val1);
+    // End of inlined logic for sc
+
+    // These conditionals also use the 'il' parameter of dequantize_q4_K.
+    // Note: re-using 'il' from the function parameter for d_val, min_val, mask_val calculation as per illustrative example.
+    const float d_val = (il & 3) < 2 ? xb->d : xb->d / 16.h;
+    const float min_val = xb->dmin;
+    const float dl = d_val * sc[0];
+    const float ml = min_val * sc[1];
+
+    const ushort mask_val = (il & 3) < 2 ? 0x0F : 0xF0;
+
+    // Unrolled loop:
+    reg[0][0] = dl * (q_ptr[0]  & mask_val) - ml;
+    reg[0][1] = dl * (q_ptr[1]  & mask_val) - ml;
+    reg[0][2] = dl * (q_ptr[2]  & mask_val) - ml;
+    reg[0][3] = dl * (q_ptr[3]  & mask_val) - ml;
+    reg[1][0] = dl * (q_ptr[4]  & mask_val) - ml;
+    reg[1][1] = dl * (q_ptr[5]  & mask_val) - ml;
+    reg[1][2] = dl * (q_ptr[6]  & mask_val) - ml;
+    reg[1][3] = dl * (q_ptr[7]  & mask_val) - ml;
+    reg[2][0] = dl * (q_ptr[8]  & mask_val) - ml;
+    reg[2][1] = dl * (q_ptr[9]  & mask_val) - ml;
+    reg[2][2] = dl * (q_ptr[10] & mask_val) - ml;
+    reg[2][3] = dl * (q_ptr[11] & mask_val) - ml;
+    reg[3][0] = dl * (q_ptr[12] & mask_val) - ml;
+    reg[3][1] = dl * (q_ptr[13] & mask_val) - ml;
+    reg[3][2] = dl * (q_ptr[14] & mask_val) - ml;
+    reg[3][3] = dl * (q_ptr[15] & mask_val) - ml;
 }
 
 template <typename type4x4>
