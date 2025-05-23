@@ -14,6 +14,9 @@
 #include "vec.h"
 #include "ops.h"
 #include "ggml.h"
+#ifdef GGML_USE_ACCELERATE
+#include <Accelerate/Accelerate.h>
+#endif
 
 #if defined(_MSC_VER) || defined(__MINGW32__)
 #include <malloc.h> // using malloc.h with MSC/MINGW
@@ -1266,6 +1269,26 @@ static void ggml_compute_forward_mul_mat(
     const struct ggml_tensor * src1 = dst->src[1];
 
     GGML_TENSOR_BINARY_OP_LOCALS
+    // Accelerate/BLAS fast path for pure float32 matrix multiply
+#ifdef GGML_USE_ACCELERATE
+    if (src0->type == GGML_TYPE_F32 && src1->type == GGML_TYPE_F32) {
+        const int64_t r2 = ne12 / ne02;
+        const int64_t r3 = ne13 / ne03;
+        for (int64_t i13 = 0; i13 < ne13; ++i13) {
+            for (int64_t i12 = 0; i12 < ne12; ++i12) {
+                const float * A = (float*)((char*)src1->data + i12*nb12 + i13*nb13);
+                const float * B = (float*)((char*)src0->data + (i12/r2)*nb02 + (i13/r3)*nb03);
+                float       * C = (float*)((char*) dst->data + i12*nb2   + i13*nb3);
+                cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasTrans,
+                            ne1, ne01, ne10,
+                            1.0f, A, ne10,
+                                  B, ne00,
+                            0.0f, C, ne01);
+            }
+        }
+        return;
+    }
+#endif
 
     const int ith = params->ith;
     const int nth = params->nth;
