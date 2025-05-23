@@ -1,4 +1,0 @@
-ngl,threads,no_mmap,flash_attn,ubatch_size,api_time_ms,generated_tokens,client_tps,error_info
-35,1,False,True,512,4360.888374998467,256,58.703635128035124,
-35,1,False,True,256,4236.614124994958,256,60.42561169063389,
-35,1,False,True,128,4352.428041980602,256,58.81774437872279,
