@@ -10,6 +10,11 @@ ggml_fp16_t ggml_table_gelu_f16[1 << 16];
 ggml_fp16_t ggml_table_gelu_quick_f16[1 << 16];
 
 void ggml_vec_dot_f32(int n, float * GGML_RESTRICT s, size_t bs, const float * GGML_RESTRICT x, size_t bx, const float * GGML_RESTRICT y, size_t by, int nrc) {
+   // accelerate dot product if available
+#ifdef GGML_USE_ACCELERATE
+    vDSP_dotpr(x, 1, y, 1, s, (vDSP_Length)n);
+    return;
+#endif
    assert(nrc == 1);
    GGML_UNUSED(nrc);
    GGML_UNUSED(bx);
