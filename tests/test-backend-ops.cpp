@@ -3924,9 +3924,15 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_eval() {
     // unary ops
     for (ggml_type type : {GGML_TYPE_F16, GGML_TYPE_F32}) {
         for (int v : {0, 1}) {
-            for (int op = 0; op < GGML_UNARY_OP_COUNT; op++) {
-                test_cases.emplace_back(new test_unary((ggml_unary_op) op, type, { 128, 2, 2, 2 }, v));
-                test_cases.emplace_back(new test_unary((ggml_unary_op) op, type, { 5, 7, 11, 13 }, v));
+            for (int op_idx = 0; op_idx < GGML_UNARY_OP_COUNT; op_idx++) {
+                ggml_unary_op op = (ggml_unary_op) op_idx;
+                test_cases.emplace_back(new test_unary(op, type, { 128, 2, 2, 2 }, v));
+                test_cases.emplace_back(new test_unary(op, type, { 5, 7, 11, 13 }, v));
+                // New test cases for test_unary with small/unaligned ne_a[0]
+                for (int64_t ne0_val : {1, 2, 3, 4, 7, 8, 15, 16, 31, 32}) {
+                    test_cases.emplace_back(new test_unary(op, type, {ne0_val, 2, 2, 2}, v));
+                    test_cases.emplace_back(new test_unary(op, type, {ne0_val, 1, 1, 1}, v)); // Test with other dimensions as 1
+                }
             }
         }
     }
@@ -4145,6 +4151,12 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_eval() {
         add_test_bin_bcast(type, {10, 5, 4, 3}, {1, 2, 2, 2});
         add_test_bin_bcast(type, {10, 5, 4, 3}, {2, 2, 2, 2});
 
+        // New test cases for test_bin_bcast with small/unaligned ne[0]
+        for (int64_t ne0_val : {1, 2, 3, 4, 7, 8, 15, 16, 31, 32}) {
+            add_test_bin_bcast(type, {ne0_val, 5, 4, 3}, {1, 1, 1, 1});
+            add_test_bin_bcast(type, {ne0_val, 1, 1, 1}, {1, 1, 1, 1}); // Test with other dimensions as 1
+        }
+
         // stable diffusion
         add_test_bin_bcast(type, {1280, 1, 1, 1}, {1, 1, 1, 1});
         add_test_bin_bcast(type, {1280, 1, 1, 1}, {1, 16, 16, 1});
@@ -4164,7 +4176,12 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_eval() {
     }
 
     test_cases.emplace_back(new test_add1());
-    test_cases.emplace_back(new test_scale());
+    // New test cases for test_scale with small/unaligned ne[0]
+    for (int64_t ne0_val : {1, 2, 3, 4, 7, 8, 15, 16, 31, 32}) {
+        test_cases.emplace_back(new test_scale(GGML_TYPE_F32, {ne0_val, 5, 4, 3}));
+        test_cases.emplace_back(new test_scale(GGML_TYPE_F32, {ne0_val, 1, 1, 1})); // Test with other dimensions as 1
+    }
+    test_cases.emplace_back(new test_scale()); // Keep existing
     test_cases.emplace_back(new test_silu_back());
 
     for (float eps : {0.0f, 1e-6f, 1e-4f, 1e-1f}) {
@@ -4202,6 +4219,16 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_eval() {
     for (ggml_type type_a : all_types) {
         for (int i = 1; i < 10; ++i) {
             test_cases.emplace_back(new test_mul_mat(type_a,    GGML_TYPE_F32, 16,  i, 256, { 1,  1}, {1, 1}));
+        }
+    }
+
+    // New test cases for test_mul_mat with small/unaligned k
+    for (int64_t k_val : {1, 2, 3, 4, 7, 8, 15, 16, 31, 32}) {
+        for (int64_t m_val : {1, 5, 16, 37}) {
+            for (int64_t n_val : {1, 7, 16, 33}) {
+                test_cases.emplace_back(new test_mul_mat(GGML_TYPE_F32, GGML_TYPE_F32, m_val, n_val, k_val, {1, 1}, {1, 1}));
+                test_cases.emplace_back(new test_mul_mat(GGML_TYPE_F16, GGML_TYPE_F16, m_val, n_val, k_val, {1, 1}, {1, 1}));
+            }
         }
     }
 
