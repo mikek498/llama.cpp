@@ -5980,6 +5980,86 @@ template <> int repack<block_iq4_nl, 4, 4>(struct ggml_tensor * t, const void * 
 //    return repack_iq4_nl_to_iq4_nl_4_bl(t, 8, data, data_size);
 //}
 
+// vec_dot
+float ggml_vec_dot_q8_0_q8_0(const int k, const void * GGML_RESTRICT vx, const void * GGML_RESTRICT vy) {
+    assert(k % QK8_0 == 0);
+    assert(k % 32 == 0); // QK8_0 is typically 32
+
+    const block_q8_0 * x = (const block_q8_0 *)vx;
+    const block_q8_0 * y = (const block_q8_0 *)vy;
+
+    const int nb = k / QK8_0;
+
+    float sum_f = 0.0f;
+
+#if defined(__ARM_FEATURE_DOTPROD)
+    for (int i = 0; i < nb; ++i) {
+        const float dx = ggml_fp16_to_fp32(x[i].d);
+        const float dy = ggml_fp16_to_fp32(y[i].d);
+
+        // Load QK8_0 (32) int8_t values as two int8x16_t vectors
+        const int8x16_t vx_qs_p1 = vld1q_s8(x[i].qs);
+        const int8x16_t vx_qs_p2 = vld1q_s8(x[i].qs + 16);
+
+        const int8x16_t vy_qs_p1 = vld1q_s8(y[i].qs);
+        const int8x16_t vy_qs_p2 = vld1q_s8(y[i].qs + 16);
+
+        // Perform dot product using vdotq_s32, accumulating into an int32x4_t
+        int32x4_t sum_qs_v = vdupq_n_s32(0);
+        sum_qs_v = vdotq_s32(sum_qs_v, vx_qs_p1, vy_qs_p1);
+        sum_qs_v = vdotq_s32(sum_qs_v, vx_qs_p2, vy_qs_p2);
+        
+        // Horizontal sum of the int32x4_t vector
+        const int32_t sum_qs_block = vaddvq_s32(sum_qs_v);
+
+        // Multiply by scales and accumulate
+        sum_f += (float)sum_qs_block * dx * dy;
+    }
+#else
+    // Fallback for non-DOTPROD NEON (using multiply and accumulate)
+    for (int i = 0; i < nb; ++i) {
+        const float dx = ggml_fp16_to_fp32(x[i].d);
+        const float dy = ggml_fp16_to_fp32(y[i].d);
+
+        // Load QK8_0 (32) int8_t values as two int8x16_t vectors
+        const int8x16_t vx_qs_p1 = vld1q_s8(x[i].qs);
+        const int8x16_t vx_qs_p2 = vld1q_s8(x[i].qs + 16);
+
+        const int8x16_t vy_qs_p1 = vld1q_s8(y[i].qs);
+        const int8x16_t vy_qs_p2 = vld1q_s8(y[i].qs + 16);
+
+        // Multiply and widen: int8x8_t * int8x8_t -> int16x8_t
+        // Part 1 (first 16 bytes)
+        int16x8_t mul_low_p1  = vmull_s8(vget_low_s8(vx_qs_p1),  vget_low_s8(vy_qs_p1));
+        int16x8_t mul_high_p1 = vmull_s8(vget_high_s8(vx_qs_p1), vget_high_s8(vy_qs_p1));
+
+        // Part 2 (next 16 bytes)
+        int16x8_t mul_low_p2  = vmull_s8(vget_low_s8(vx_qs_p2),  vget_low_s8(vy_qs_p2));
+        int16x8_t mul_high_p2 = vmull_s8(vget_high_s8(vx_qs_p2), vget_high_s8(vy_qs_p2));
+
+        // Accumulate 16-bit products into 32-bit sums
+        // Add pairwise and widen: (s16 + s16) -> s32. vpaddlq sums adjacent pairs and widens.
+        int32x4_t sum32_p1_a = vpaddlq_s16(mul_low_p1);
+        int32x4_t sum32_p1_b = vpaddlq_s16(mul_high_p1);
+        int32x4_t sum32_p2_a = vpaddlq_s16(mul_low_p2);
+        int32x4_t sum32_p2_b = vpaddlq_s16(mul_high_p2);
+
+        // Sum the four int32x4_t vectors
+        int32x4_t total_sum_s32_p1 = vaddq_s32(sum32_p1_a, sum32_p1_b);
+        int32x4_t total_sum_s32_p2 = vaddq_s32(sum32_p2_a, sum32_p2_b);
+        int32x4_t total_sum_s32 = vaddq_s32(total_sum_s32_p1, total_sum_s32_p2);
+        
+        // Horizontal sum of the final int32x4_t vector
+        const int32_t sum_qs_block = vaddvq_s32(total_sum_s32);
+
+        // Multiply by scales and accumulate
+        sum_f += (float)sum_qs_block * dx * dy;
+    }
+#endif
+
+    return sum_f;
+}
+
 // gemv
 template <typename BLOC_TYPE, int64_t INTER_SIZE, int64_t NB_COLS, ggml_type PARAM_TYPE>
 void gemv(int, float *, size_t, const void *, const void *, int, int);
