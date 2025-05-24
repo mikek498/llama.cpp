@@ -1,5 +1,9 @@
 #include "unary-ops.h"
 
+#if defined(GGML_USE_ACCELERATE)
+#include <Accelerate/Accelerate.h>
+#endif
+
 static inline float op_abs(float x) {
     return fabsf(x);
 }
@@ -95,7 +99,51 @@ static void apply_unary_op(const ggml_compute_params * params, ggml_tensor * dst
         dst_t        * dst_ptr  = (dst_t  *)       ((char *)       dst->data  + i03*nb3  + i02*nb2  + i01*nb1 );
         const src0_t * src0_ptr = (const src0_t *) ((const char *) src0->data + i03*nb03 + i02*nb02 + i01*nb01);
 
-        vec_unary_op<op>(ne0, dst_ptr, src0_ptr);
+#if defined(GGML_USE_ACCELERATE) && defined(__APPLE__)
+        if constexpr (std::is_same_v<src0_t, float> && std::is_same_v<dst_t, float>) {
+            // ne00 is the number of elements in the current row for src0 (src0->ne[0])
+            // nb0 is dst->nb[0], which is sizeof(dst_t)
+            // nb00 is src0->nb[0], which is sizeof(src0_t)
+            // The tensors are contiguous by assertion.
+            if (op == op_abs) {
+                vDSP_vabsf((const float*)src0_ptr, 1, (float*)dst_ptr, 1, ne00);
+                continue;
+            }
+            if (op == op_neg) {
+                vDSP_vnegf((const float*)src0_ptr, 1, (float*)dst_ptr, 1, ne00);
+                continue;
+            }
+            if (op == op_sqr) {
+                vDSP_vsqf((const float*)src0_ptr, 1, (float*)dst_ptr, 1, ne00);
+                continue;
+            }
+            if (op == op_sqrt) {
+                vDSP_vsqrtf((const float*)src0_ptr, 1, (float*)dst_ptr, 1, ne00);
+                continue;
+            }
+            if (op == op_log) {
+                vDSP_vlogf((const float*)src0_ptr, 1, (float*)dst_ptr, 1, ne00);
+                continue;
+            }
+            if (op == op_exp) {
+                vDSP_vexpf((const float*)src0_ptr, 1, (float*)dst_ptr, 1, ne00);
+                continue;
+            }
+            if (op == op_tanh) {
+                // For vDSP_vtanhf, the signature is vDSP_vtanhf(destination, source, count)
+                // Note the order of dst_ptr and src0_ptr is swapped for vDSP_vtanhf and vDSP_vsmulf (if used).
+                // All others listed (vabsf, vnegf, vsqf, vsqrtf, vlogf, vexpf) are (src, src_stride, dst, dst_stride, count).
+                // Let me double check vDSP_vtanhf documentation.
+                // Okay, Apple's documentation for vDSP_vtanhf:
+                // void vDSP_vtanhf ( float *__C, const float *__A, const vDSP_Length *__N );
+                // C is destination, A is source. So (dst_ptr, src0_ptr, count)
+                vDSP_vtanhf((float*)dst_ptr, (const float*)src0_ptr, &ne00);
+                continue;
+            }
+        }
+#endif
+        // Fallback for non-F32 types, non-Accelerate, or operations not covered by vDSP
+        vec_unary_op<op>(ne00, dst_ptr, src0_ptr); // Use ne00 for consistency
     }
 }
 

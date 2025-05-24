@@ -110,7 +110,31 @@ static void apply_binary_op(const ggml_compute_params * params, ggml_tensor * ds
                 vec_binary_op_contiguous<op>(ne10, dst_ptr + r*ne10, src0_ptr + r*ne10, src1_ptr);
             }
         } else {
-            vec_binary_op_non_contiguous<op>(ne0, ne10, nb10, dst_ptr, src0_ptr, src1_ptr);
+#ifdef GGML_USE_ACCELERATE
+            if constexpr (std::is_same_v<src0_t, float> && std::is_same_v<src1_t, float> && std::is_same_v<dst_t, float>) {
+                if (vDSP_op != nullptr) {
+                    // src0 and dst are contiguous, src1 is not
+                    // NOTE: src0 is ne00 long, src1 is ne10 long
+                    //       if src1 is broadcastable, then ne00 must be a multiple of ne10
+                    //       and we can just repeat the operation
+                    //       if src1 is not broadcastable, then ne00 == ne10
+                    GGML_ASSERT(ne00 % ne10 == 0);
+                    const int64_t nr0 = ne00 / ne10;
+                    vDSP_Stride src1_stride = nb10 / sizeof(src1_t);
+                    for (int64_t r = 0; r < nr0; ++r) {
+                        // Order of arguments for vDSP: (src1, stride1, src0, stride0, dst, stride_dst, count)
+                        // This is based on the existing contiguous case: vDSP_op(src1_ptr, 1, src0_ptr + r*ne10, 1, dst_ptr + r*ne10, 1, ne10);
+                        // For non-contiguous src1, src1_ptr already points to the correct starting element for the row,
+                        // but its elements are spaced by src1_stride.
+                        // src0_ptr and dst_ptr are advanced by r*ne10 for each repetition.
+                        vDSP_op(src1_ptr, src1_stride, src0_ptr + r*ne10, 1, dst_ptr + r*ne10, 1, ne10);
+                    }
+                    continue; // Skip the generic path
+                }
+            }
+#endif
+            // Fallback for non-Accelerate or non-F32 types or when vDSP_op is null
+            vec_binary_op_non_contiguous<op>(ne00, ne10, nb10, dst_ptr, src0_ptr, src1_ptr);
         }
     }
 }

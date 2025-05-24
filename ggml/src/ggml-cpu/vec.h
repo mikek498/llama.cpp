@@ -147,7 +147,12 @@ inline static void ggml_vec_dot_f16_unroll(const int n, const int xs, float * GG
 }
 
 inline static void ggml_vec_mad_f32(const int n, float * GGML_RESTRICT y, const float * GGML_RESTRICT x, const float v) {
-#if defined(GGML_SIMD)
+#if defined(GGML_USE_ACCELERATE) && defined(__APPLE__)
+    // y[i] = x[i]*v + y[i]
+    // vDSP_vmsa(A, As, B, C, Cs, D, Ds, N) => D[n] = A[n]*B + C[n]
+    // A = x, B = v, C = y, D = y
+    vDSP_vmsa(x, 1, &v, y, 1, y, 1, n);
+#elif defined(GGML_SIMD)
     const int np = (n & ~(GGML_F32_STEP - 1));
 
     GGML_F32_VEC vx = GGML_F32_VEC_SET1(v);
