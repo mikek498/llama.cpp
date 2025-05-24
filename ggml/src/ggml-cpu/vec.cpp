@@ -177,6 +177,70 @@ void ggml_vec_silu_f32(const int n, float * y, const float * x) {
         _mm_storeu_ps(y + i, ggml_v_silu(_mm_loadu_ps(x + i)));
     }
 #elif defined(__ARM_NEON) && defined(__aarch64__)
+#ifdef ARM_M1
+    // M1 Max ultra-optimized SiLU with 64-element unrolling and prefetching
+    for (; i + 63 < n; i += 64) {
+        // Prefetch next data for optimal memory bandwidth
+        __builtin_prefetch(x + i + 64, 0, 3);
+        __builtin_prefetch(y + i + 64, 0, 1);
+        
+        // Load 16 NEON registers worth of data
+        float32x4_t x0 = vld1q_f32(x + i);
+        float32x4_t x1 = vld1q_f32(x + i + 4);
+        float32x4_t x2 = vld1q_f32(x + i + 8);
+        float32x4_t x3 = vld1q_f32(x + i + 12);
+        float32x4_t x4 = vld1q_f32(x + i + 16);
+        float32x4_t x5 = vld1q_f32(x + i + 20);
+        float32x4_t x6 = vld1q_f32(x + i + 24);
+        float32x4_t x7 = vld1q_f32(x + i + 28);
+        float32x4_t x8 = vld1q_f32(x + i + 32);
+        float32x4_t x9 = vld1q_f32(x + i + 36);
+        float32x4_t x10 = vld1q_f32(x + i + 40);
+        float32x4_t x11 = vld1q_f32(x + i + 44);
+        float32x4_t x12 = vld1q_f32(x + i + 48);
+        float32x4_t x13 = vld1q_f32(x + i + 52);
+        float32x4_t x14 = vld1q_f32(x + i + 56);
+        float32x4_t x15 = vld1q_f32(x + i + 60);
+        
+        // Apply SiLU function with interleaved stores for better pipeline utilization
+        vst1q_f32(y + i, ggml_v_silu(x0));
+        vst1q_f32(y + i + 4, ggml_v_silu(x1));
+        vst1q_f32(y + i + 8, ggml_v_silu(x2));
+        vst1q_f32(y + i + 12, ggml_v_silu(x3));
+        vst1q_f32(y + i + 16, ggml_v_silu(x4));
+        vst1q_f32(y + i + 20, ggml_v_silu(x5));
+        vst1q_f32(y + i + 24, ggml_v_silu(x6));
+        vst1q_f32(y + i + 28, ggml_v_silu(x7));
+        vst1q_f32(y + i + 32, ggml_v_silu(x8));
+        vst1q_f32(y + i + 36, ggml_v_silu(x9));
+        vst1q_f32(y + i + 40, ggml_v_silu(x10));
+        vst1q_f32(y + i + 44, ggml_v_silu(x11));
+        vst1q_f32(y + i + 48, ggml_v_silu(x12));
+        vst1q_f32(y + i + 52, ggml_v_silu(x13));
+        vst1q_f32(y + i + 56, ggml_v_silu(x14));
+        vst1q_f32(y + i + 60, ggml_v_silu(x15));
+    }
+    // Process remaining 32-element blocks
+    for (; i + 31 < n; i += 32) {
+        float32x4_t x0 = vld1q_f32(x + i);
+        float32x4_t x1 = vld1q_f32(x + i + 4);
+        float32x4_t x2 = vld1q_f32(x + i + 8);
+        float32x4_t x3 = vld1q_f32(x + i + 12);
+        float32x4_t x4 = vld1q_f32(x + i + 16);
+        float32x4_t x5 = vld1q_f32(x + i + 20);
+        float32x4_t x6 = vld1q_f32(x + i + 24);
+        float32x4_t x7 = vld1q_f32(x + i + 28);
+        
+        vst1q_f32(y + i, ggml_v_silu(x0));
+        vst1q_f32(y + i + 4, ggml_v_silu(x1));
+        vst1q_f32(y + i + 8, ggml_v_silu(x2));
+        vst1q_f32(y + i + 12, ggml_v_silu(x3));
+        vst1q_f32(y + i + 16, ggml_v_silu(x4));
+        vst1q_f32(y + i + 20, ggml_v_silu(x5));
+        vst1q_f32(y + i + 24, ggml_v_silu(x6));
+        vst1q_f32(y + i + 28, ggml_v_silu(x7));
+    }
+#endif
     for (; i + 3 < n; i += 4) {
         vst1q_f32(y + i, ggml_v_silu(vld1q_f32(x + i)));
     }
@@ -505,6 +569,103 @@ void ggml_vec_acc_f32(const int n, float * y, const float * x) {
         _mm_storeu_ps(y + i, _mm_add_ps(_mm_loadu_ps(y + i), _mm_loadu_ps(x + i)));
     }
 #elif defined(__ARM_NEON) && defined(__aarch64__)
+#ifdef ARM_M1
+    // M1 Max ultra-optimized accumulation with 128-element unrolling and prefetching
+    for (; i + 127 < n; i += 128) {
+        // Prefetch next data for maximum memory bandwidth utilization
+        __builtin_prefetch(y + i + 128, 1, 3);
+        __builtin_prefetch(x + i + 128, 0, 3);
+        
+        // Process 32 NEON registers worth of data (128 floats)
+        for (int j = 0; j < 128; j += 16) {
+            float32x4_t y0 = vld1q_f32(y + i + j);
+            float32x4_t y1 = vld1q_f32(y + i + j + 4);
+            float32x4_t y2 = vld1q_f32(y + i + j + 8);
+            float32x4_t y3 = vld1q_f32(y + i + j + 12);
+            
+            float32x4_t x0 = vld1q_f32(x + i + j);
+            float32x4_t x1 = vld1q_f32(x + i + j + 4);
+            float32x4_t x2 = vld1q_f32(x + i + j + 8);
+            float32x4_t x3 = vld1q_f32(x + i + j + 12);
+            
+            vst1q_f32(y + i + j, vaddq_f32(y0, x0));
+            vst1q_f32(y + i + j + 4, vaddq_f32(y1, x1));
+            vst1q_f32(y + i + j + 8, vaddq_f32(y2, x2));
+            vst1q_f32(y + i + j + 12, vaddq_f32(y3, x3));
+        }
+    }
+    // Standard ARM NEON accumulation with maximum unrolling
+    for (; i + 63 < n; i += 64) {
+        // Process 16 NEON registers worth of data (64 floats)
+        float32x4_t y0 = vld1q_f32(y + i);
+        float32x4_t y1 = vld1q_f32(y + i + 4);
+        float32x4_t y2 = vld1q_f32(y + i + 8);
+        float32x4_t y3 = vld1q_f32(y + i + 12);
+        float32x4_t y4 = vld1q_f32(y + i + 16);
+        float32x4_t y5 = vld1q_f32(y + i + 20);
+        float32x4_t y6 = vld1q_f32(y + i + 24);
+        float32x4_t y7 = vld1q_f32(y + i + 28);
+        float32x4_t y8 = vld1q_f32(y + i + 32);
+        float32x4_t y9 = vld1q_f32(y + i + 36);
+        float32x4_t y10 = vld1q_f32(y + i + 40);
+        float32x4_t y11 = vld1q_f32(y + i + 44);
+        float32x4_t y12 = vld1q_f32(y + i + 48);
+        float32x4_t y13 = vld1q_f32(y + i + 52);
+        float32x4_t y14 = vld1q_f32(y + i + 56);
+        float32x4_t y15 = vld1q_f32(y + i + 60);
+        
+        float32x4_t x0 = vld1q_f32(x + i);
+        float32x4_t x1 = vld1q_f32(x + i + 4);
+        float32x4_t x2 = vld1q_f32(x + i + 8);
+        float32x4_t x3 = vld1q_f32(x + i + 12);
+        float32x4_t x4 = vld1q_f32(x + i + 16);
+        float32x4_t x5 = vld1q_f32(x + i + 20);
+        float32x4_t x6 = vld1q_f32(x + i + 24);
+        float32x4_t x7 = vld1q_f32(x + i + 28);
+        float32x4_t x8 = vld1q_f32(x + i + 32);
+        float32x4_t x9 = vld1q_f32(x + i + 36);
+        float32x4_t x10 = vld1q_f32(x + i + 40);
+        float32x4_t x11 = vld1q_f32(x + i + 44);
+        float32x4_t x12 = vld1q_f32(x + i + 48);
+        float32x4_t x13 = vld1q_f32(x + i + 52);
+        float32x4_t x14 = vld1q_f32(x + i + 56);
+        float32x4_t x15 = vld1q_f32(x + i + 60);
+        
+        // Use FMA for optimal performance (y = y + x)
+        vst1q_f32(y + i, vaddq_f32(y0, x0));
+        vst1q_f32(y + i + 4, vaddq_f32(y1, x1));
+        vst1q_f32(y + i + 8, vaddq_f32(y2, x2));
+        vst1q_f32(y + i + 12, vaddq_f32(y3, x3));
+        vst1q_f32(y + i + 16, vaddq_f32(y4, x4));
+        vst1q_f32(y + i + 20, vaddq_f32(y5, x5));
+        vst1q_f32(y + i + 24, vaddq_f32(y6, x6));
+        vst1q_f32(y + i + 28, vaddq_f32(y7, x7));
+        vst1q_f32(y + i + 32, vaddq_f32(y8, x8));
+        vst1q_f32(y + i + 36, vaddq_f32(y9, x9));
+        vst1q_f32(y + i + 40, vaddq_f32(y10, x10));
+        vst1q_f32(y + i + 44, vaddq_f32(y11, x11));
+        vst1q_f32(y + i + 48, vaddq_f32(y12, x12));
+        vst1q_f32(y + i + 52, vaddq_f32(y13, x13));
+        vst1q_f32(y + i + 56, vaddq_f32(y14, x14));
+        vst1q_f32(y + i + 60, vaddq_f32(y15, x15));
+    }
+    for (; i + 15 < n; i += 16) {
+        float32x4_t y0 = vld1q_f32(y + i);
+        float32x4_t y1 = vld1q_f32(y + i + 4);
+        float32x4_t y2 = vld1q_f32(y + i + 8);
+        float32x4_t y3 = vld1q_f32(y + i + 12);
+        
+        float32x4_t x0 = vld1q_f32(x + i);
+        float32x4_t x1 = vld1q_f32(x + i + 4);
+        float32x4_t x2 = vld1q_f32(x + i + 8);
+        float32x4_t x3 = vld1q_f32(x + i + 12);
+        
+        vst1q_f32(y + i, vaddq_f32(y0, x0));
+        vst1q_f32(y + i + 4, vaddq_f32(y1, x1));
+        vst1q_f32(y + i + 8, vaddq_f32(y2, x2));
+        vst1q_f32(y + i + 12, vaddq_f32(y3, x3));
+    }
+#endif
     for (; i + 3 < n; i += 4) {
         vst1q_f32(y + i, vaddq_f32(vld1q_f32(y + i), vld1q_f32(x + i)));
     }

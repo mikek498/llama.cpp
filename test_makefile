@@ -1,0 +1,30 @@
+CXX = clang++
+CXXFLAGS = -std=c++17 -O3 -march=native -mtune=native
+NEON_FLAGS = -mfpu=neon-fp-armv8 -mcpu=cortex-a76
+INCLUDES = -I.
+
+SOURCES = test_m1_optimizations.cpp ggml/src/ggml-cpu/vec.cpp
+OBJECTS = $(SOURCES:.cpp=.o)
+
+# Standard ARM NEON build
+test_standard: $(SOURCES)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) -o test_standard $(SOURCES)
+
+# M1 Max optimized build
+test_m1: $(SOURCES)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) -DARM_M1 -o test_m1 $(SOURCES)
+
+# Build both versions
+all: test_standard test_m1
+
+# Run benchmarks
+benchmark: all
+	@echo "Running standard ARM NEON benchmark:"
+	./test_standard
+	@echo "Running M1 Max optimized benchmark:"
+	./test_m1
+
+clean:
+	rm -f test_standard test_m1 $(OBJECTS)
+
+.PHONY: all benchmark clean

@@ -1,0 +1,25 @@
+CXX = clang++
+CXXFLAGS = -std=c++17 -O3 -march=native -mtune=native -ffast-math
+
+# Standard ARM NEON build
+test_standard: standalone_test.cpp
+	$(CXX) $(CXXFLAGS) -o test_standard standalone_test.cpp
+
+# M1 Max optimized build
+test_m1: standalone_test.cpp
+	$(CXX) $(CXXFLAGS) -DARM_M1 -o test_m1 standalone_test.cpp
+
+# Build both versions
+all: test_standard test_m1
+
+# Run benchmarks
+benchmark: all
+	@echo "Running standard ARM NEON benchmark:"
+	./test_standard
+	@echo "Running M1 Max optimized benchmark:"
+	./test_m1
+
+clean:
+	rm -f test_standard test_m1
+
+.PHONY: all benchmark clean
