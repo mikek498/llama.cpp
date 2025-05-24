@@ -14,9 +14,9 @@
 //   x2 = bitwise float constant
 // Returns: none
 // --------------------------------------------------------------------
-.globl  _mlk_f32_fill
+.globl  __mlk_f32_fill
 .p2align 2
-_mlk_f32_fill:
+__mlk_f32_fill:
     // prepare NEON register
     dup     v0.4s, w2
 

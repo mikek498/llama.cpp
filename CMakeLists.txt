@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.14) # for add_link_options and implicit target directories.
-project("llama.cpp" C CXX)
+project("llama.cpp" C CXX ASM)
 include(CheckIncludeFileCXX)
 
 #set(CMAKE_WARN_DEPRECATED YES)
