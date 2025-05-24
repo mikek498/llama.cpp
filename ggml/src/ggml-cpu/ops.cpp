@@ -12,6 +12,9 @@
 
 #include <float.h>
 
+// Forward declarations
+static void ggml_compute_forward_l2_norm_f32(const struct ggml_compute_params * params, struct ggml_tensor * dst);
+
 // ggml_compute_forward_dup
 
 static void ggml_compute_forward_dup_same_cont(
@@ -3245,8 +3248,8 @@ static void ggml_compute_forward_norm_f32(
                 const float mean = sum_sq / ne00;
                 const float scale_val = 1.0f / sqrtf(mean + eps);
                 
-                // vDSP_vsmulf scales and then stores, so y_ptr is both source (after potential memcpy) and destination.
-                vDSP_vsmulf(y_ptr, 1, &scale_val, y_ptr, 1, ne00);
+                // vDSP_vsmul scales and then stores, so y_ptr is both source (after potential memcpy) and destination.
+                vDSP_vsmul(y_ptr, 1, &scale_val, y_ptr, 1, ne00);
 
 #else // Fallback to original C-loop implementation
                 const float * x = (float *) ((char *) src0->data + i01*nb01 + i02*nb02 + i03*nb03);
@@ -3336,7 +3339,7 @@ static void ggml_compute_forward_rms_norm_f32(
                 const float variance = sum_sq_centered / ne00;
                 const float scale_val = 1.0f / sqrtf(variance + eps);
 
-                vDSP_vsmulf(y_ptr, 1, &scale_val, y_ptr, 1, ne00);
+                vDSP_vsmul(y_ptr, 1, &scale_val, y_ptr, 1, ne00);
 #else // Fallback to original C-loop implementation
                 const float * x = (float *) ((char *) src0->data + i01*nb01 + i02*nb02 + i03*nb03);
 

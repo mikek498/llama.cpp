@@ -122,22 +122,20 @@ static void apply_unary_op(const ggml_compute_params * params, ggml_tensor * dst
                 continue;
             }
             if (op == op_log) {
-                vDSP_vlogf((const float*)src0_ptr, 1, (float*)dst_ptr, 1, ne00);
+                vDSP_vlog((const float*)src0_ptr, 1, (float*)dst_ptr, 1, ne00);
                 continue;
             }
             if (op == op_exp) {
-                vDSP_vexpf((const float*)src0_ptr, 1, (float*)dst_ptr, 1, ne00);
+                vDSP_vexp((const float*)src0_ptr, 1, (float*)dst_ptr, 1, ne00);
                 continue;
             }
             if (op == op_tanh) {
-                // For vDSP_vtanhf, the signature is vDSP_vtanhf(destination, source, count)
-                // Note the order of dst_ptr and src0_ptr is swapped for vDSP_vtanhf and vDSP_vsmulf (if used).
-                // All others listed (vabsf, vnegf, vsqf, vsqrtf, vlogf, vexpf) are (src, src_stride, dst, dst_stride, count).
-                // Let me double check vDSP_vtanhf documentation.
-                // Okay, Apple's documentation for vDSP_vtanhf:
-                // void vDSP_vtanhf ( float *__C, const float *__A, const vDSP_Length *__N );
-                // C is destination, A is source. So (dst_ptr, src0_ptr, count)
-                vDSP_vtanhf((float*)dst_ptr, (const float*)src0_ptr, &ne00);
+                // For vDSP_vtanh, the signature is vDSP_vtanh(destination, source, count_pointer)
+                // Apple's documentation for vDSP_vtanh:
+                // void vDSP_vtanh ( float *__C, const float *__A, const vDSP_Length *__N );
+                // C is destination, A is source. N is a pointer to length.
+                vDSP_Length ne00_len = ne00;
+                vDSP_vtanh((float*)dst_ptr, (const float*)src0_ptr, &ne00_len);
                 continue;
             }
         }
