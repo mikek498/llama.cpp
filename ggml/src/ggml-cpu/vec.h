@@ -151,7 +151,7 @@ inline static void ggml_vec_mad_f32(const int n, float * GGML_RESTRICT y, const 
     // y[i] = x[i]*v + y[i]
     // vDSP_vsma(A, As, B, C, Cs, N) => C[n] = A[n]*B + C[n]
     // A = x, B = v, C = y
-    vDSP_vsma((const float *)x, (vDSP_Stride)1, (const float *)&v, (float *)y, (vDSP_Stride)1, (vDSP_Length)n);
+    vDSP_vsmuladd((const float *)x, (vDSP_Stride)1, (const float *)&v, (const float *)y, (vDSP_Stride)1, (float *)y, (vDSP_Stride)1, (vDSP_Length)n);
 #elif defined(GGML_SIMD)
     const int np = (n & ~(GGML_F32_STEP - 1));
 
