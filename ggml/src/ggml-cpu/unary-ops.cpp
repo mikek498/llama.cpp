@@ -112,12 +112,12 @@ static void apply_unary_op(const ggml_compute_params * params, ggml_tensor * dst
             }
             if (op == op_neg) {
                 int count_int = (int)ne00;
-                vvnegf((float*)dst_ptr, (const float*)src0_ptr, &count_int);
+                vDSP_vneg((float*)src0_ptr, 1, (float*)dst_ptr, 1, count_int);
                 continue;
             }
             if (op == op_sqr) {
                 int count_int = (int)ne00;
-                vvsqf((float*)dst_ptr, (const float*)src0_ptr, &count_int);
+                vDSP_vsq((float*)src0_ptr, 1, (float*)dst_ptr, 1, count_int);
                 continue;
             }
             if (op == op_sqrt) {

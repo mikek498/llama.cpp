@@ -3203,7 +3203,7 @@ void ggml_compute_forward_silu_back(
 
 // ggml_compute_forward_norm
 
-static void ggml_compute_forward_norm_f32(
+void ggml_compute_forward_norm_f32(
         const ggml_compute_params * params,
         ggml_tensor * dst) {
 
@@ -3243,8 +3243,7 @@ static void ggml_compute_forward_norm_f32(
                 // If not inplace, y_ptr is a copy of x_ptr, so using y_ptr is also correct.
                 // Let's consistently use y_ptr if it's guaranteed to have the correct source data.
                 const float * const src_for_vssqf = (src0->data == dst->data) ? y_ptr : x_ptr;
-                vDSP_vssqf(src_for_vssqf, 1, &sum_sq, ne00);
-
+                vDSP_svesq(src_for_vssqf, 1, &sum_sq, ne00);
                 const float mean = sum_sq / ne00;
                 const float scale_val = 1.0f / sqrtf(mean + eps);
                 
@@ -3274,6 +3273,7 @@ static void ggml_compute_forward_norm_f32(
                 const float scale = 1.0f/sqrtf(variance + eps);
 
                 ggml_vec_scale_f32(ne00, y, scale);
+#endif  // Add this line
             }
         }
     }
@@ -3299,7 +3299,7 @@ void ggml_compute_forward_norm(
 
 // ggml_compute_forward_group_rms_norm
 
-static void ggml_compute_forward_rms_norm_f32(
+void ggml_compute_forward_rms_norm_f32(
         const ggml_compute_params * params,
         ggml_tensor * dst) {
 
@@ -3334,7 +3334,7 @@ static void ggml_compute_forward_rms_norm_f32(
                 vDSP_vsadd(x_ptr, 1, &neg_mean_val, y_ptr, 1, ne00);
 
                 float sum_sq_centered;
-                vDSP_vssqf(y_ptr, 1, &sum_sq_centered, ne00);
+                vDSP_svesq(y_ptr, 1, &sum_sq_centered, ne00);
                 
                 const float variance = sum_sq_centered / ne00;
                 const float scale_val = 1.0f / sqrtf(variance + eps);
@@ -3384,7 +3384,7 @@ void ggml_compute_forward_rms_norm(
     }
 }
 
-static void ggml_compute_forward_rms_norm_back_f32(
+void ggml_compute_forward_rms_norm_back_f32(
         const ggml_compute_params * params,
         ggml_tensor * dst) {
 
@@ -3561,7 +3561,7 @@ void ggml_compute_forward_rms_norm_back(
 
 // ggml_compute_forward_group_norm
 
-static void ggml_compute_forward_group_norm_f32(
+void ggml_compute_forward_group_norm_f32(
     const ggml_compute_params * params,
     ggml_tensor * dst) {
 
@@ -3656,7 +3656,7 @@ void ggml_compute_forward_group_norm(
 
 // ggml_compute_forward_l2_norm
 
-static void ggml_compute_forward_l2_norm_f32(
+void ggml_compute_forward_l2_norm_f32(
     const ggml_compute_params * params,
     ggml_tensor * dst) {
 
@@ -3694,7 +3694,6 @@ static void ggml_compute_forward_l2_norm_f32(
                 const float scale = 1.0f/fmaxf(sqrtf(sum), eps);
 
                 ggml_vec_scale_f32(ne00, y, scale);
-#endif
             }
         }
     }
