@@ -106,27 +106,33 @@ static void apply_unary_op(const ggml_compute_params * params, ggml_tensor * dst
             // nb00 is src0->nb[0], which is sizeof(src0_t)
             // The tensors are contiguous by assertion.
             if (op == op_abs) {
-                vDSP_vabsf((const float*)src0_ptr, 1, (float*)dst_ptr, 1, ne00);
+                int count_int = (int)ne00;
+                vvfabsf((float*)dst_ptr, (const float*)src0_ptr, &count_int);
                 continue;
             }
             if (op == op_neg) {
-                vDSP_vnegf((const float*)src0_ptr, 1, (float*)dst_ptr, 1, ne00);
+                int count_int = (int)ne00;
+                vvnegf((float*)dst_ptr, (const float*)src0_ptr, &count_int);
                 continue;
             }
             if (op == op_sqr) {
-                vDSP_vsqf((const float*)src0_ptr, 1, (float*)dst_ptr, 1, ne00);
+                int count_int = (int)ne00;
+                vvsqf((float*)dst_ptr, (const float*)src0_ptr, &count_int);
                 continue;
             }
             if (op == op_sqrt) {
-                vDSP_vsqrtf((const float*)src0_ptr, 1, (float*)dst_ptr, 1, ne00);
+                int count_int = (int)ne00;
+                vvsqrtf((float*)dst_ptr, (const float*)src0_ptr, &count_int);
                 continue;
             }
             if (op == op_log) {
-                vDSP_vlog((const float*)src0_ptr, 1, (float*)dst_ptr, 1, ne00);
+                int count_int = (int)ne00;
+                vvlogf((float*)dst_ptr, (const float*)src0_ptr, &count_int);
                 continue;
             }
             if (op == op_exp) {
-                vDSP_vexp((const float*)src0_ptr, 1, (float*)dst_ptr, 1, ne00);
+                int count_int = (int)ne00;
+                vvexpf((float*)dst_ptr, (const float*)src0_ptr, &count_int);
                 continue;
             }
             if (op == op_tanh) {
@@ -134,8 +140,12 @@ static void apply_unary_op(const ggml_compute_params * params, ggml_tensor * dst
                 // Apple's documentation for vDSP_vtanh:
                 // void vDSP_vtanh ( float *__C, const float *__A, const vDSP_Length *__N );
                 // C is destination, A is source. N is a pointer to length.
-                vDSP_Length ne00_len = ne00;
-                vDSP_vtanh((float*)dst_ptr, (const float*)src0_ptr, &ne00_len);
+                // For vvtanhf, the signature is vvtanhf(destination, source, count_pointer)
+                // Apple's documentation for vvtanhf:
+                // void vvtanhf ( float *__C, const float *__A, const int *__N );
+                // C is destination, A is source. N is a pointer to int length.
+                int ne00_int = (int)ne00;
+                vvtanhf((float*)dst_ptr, (const float*)src0_ptr, &ne00_int);
                 continue;
             }
         }
