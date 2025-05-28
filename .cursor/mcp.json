@@ -1,0 +1,24 @@
+{
+  "mcpServers": {
+    "XcodeBuildMCP": {
+      "command": "mise",
+      "args": [
+        "x",
+        "npm:xcodebuildmcp@1.4.0",
+        "--",
+        "xcodebuildmcp"
+      ]
+    },
+    "lldb-mcp": {
+      "command": "python3.11",
+      "args": ["/Users/mk/dev/2025/lldb-mcp/lldb_mcp.py"],
+      "disabled": false
+    },
+    "text-editor": {
+      "command": "uvx",
+      "args": [
+        "mcp-text-editor"
+      ]
+    }
+  }
+}

@@ -1,0 +1,11 @@
+@@ -101,7 +101,8 @@
+ // function for calculate inner product between half a q4_0 block and 16 floats (yl), sumy is SUM(yl[i])
+ // il indicates where the q4 quants begin (0 or QK4_0/4)
+ // we assume that the yl's have been multiplied with the appropriate scale factor
+-// that corresponds to the missing bit shifts (1, 1/16, 1/256, 1/4096)
+-inline float block_q_n_dot_y(device const block_q4_0 * qb_curr, float sumy, thread float * yl, int il) {
++// that corresponds to the missing bit shifts (1, 1/16, 1/256, 1/4096) - This is for the original version.
++inline float block_q4_0_dot_y_original(device const block_q4_0 * qb_curr, float sumy, thread float * yl, int il) {
+     float d = qb_curr->d;
+ 
++    float acc[4] = { 0.0f, 0.0f, 0.0f, 0.0f };

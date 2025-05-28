@@ -1,0 +1,117 @@
+--- a/ggml/src/ggml-metal/ggml-metal.metal
++++ b/ggml/src/ggml-metal/ggml-metal.metal
+@@ -101,7 +101,8 @@
+ // function for calculate inner product between half a q4_0 block and 16 floats (yl), sumy is SUM(yl[i])
+ // il indicates where the q4 quants begin (0 or QK4_0/4)
+ // we assume that the yl's have been multiplied with the appropriate scale factor
+-// that corresponds to the missing bit shifts (1, 1/16, 1/256, 1/4096)
+-inline float block_q_n_dot_y(device const block_q4_0 * qb_curr, float sumy, thread float * yl, int il) {
++// that corresponds to the missing bit shifts (1, 1/16, 1/256, 1/4096) - This is for the original version.
++inline float block_q4_0_dot_y_original(device const block_q4_0 * qb_curr, float sumy, thread float * yl, int il) {
++    float d = qb_curr->d;
++
++    float acc[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
++
++    for (int i = 0; i < 4; ++i) {
++        float4 deq_vals = dequantize_q4_0_t4(qb_curr, il + i);
++        acc[0] += yl[ 0] * deq_vals[0];
++        acc[1] += yl[ 4] * deq_vals[1];
++        acc[2] += yl[ 8] * deq_vals[2];
++        acc[3] += yl[12] * deq_vals[3];
++        yl += 1;
++    }
++
++    return d * (sumy * -8.f + acc[0] + acc[1] + acc[2] + acc[3]);
++}
++
++// New vectorized version for block_q4_0
++// yl_original contains UNMODIFIED y values.
++// il_dequant_base is 0 for first 16 elements of block (using dequantize_q4_0_t4 il 0-3),
++// or 4 for second 16 elements (using dequantize_q4_0_t4 il 4-7).
++inline float block_q_n_dot_y(device const block_q4_0 * qb_curr, thread const float * yl_original, int il_dequant_base) {
++    float total_sum = 0.0f;
++
++    for (int i = 0; i < 4; ++i) { // Process 4 chunks of float4 = 16 floats
++        float4 deq_vals;
++        // dequantize_q4_0_t4 takes 'il' from 0..7.
++        // il_dequant_base is 0 for first half of block, 4 for second half.
++        dequantize_q4_0_t4(qb_curr, il_dequant_base + i, deq_vals);
++
++        // Load corresponding 4 values from yl_original
++        float4 y_vals = float4(yl_original[i*4], yl_original[i*4 + 1], yl_original[i*4 + 2], yl_original[i*4 + 3]);
++
++        // Multiply and accumulate
++        total_sum += dot(deq_vals, y_vals);
++    }
++
++    return total_sum;
++}
+-    float d = qb_curr->d;
+-
+-    float acc[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+-
+-    for (int i = 0; i < 4; ++i) {
+-        float4 deq_vals = dequantize_q4_0_t4(qb_curr, il + i);
+-        acc[0] += yl[ 0] * deq_vals[0];
+-        acc[1] += yl[ 4] * deq_vals[1];
+-        acc[2] += yl[ 8] * deq_vals[2];
+-        acc[3] += yl[12] * deq_vals[3];
+-        yl += 1;
+-    }
+-
+-    return d * (sumy * -8.f + acc[0] + acc[1] + acc[2] + acc[3]);
+-}
+ 
+ // function for calculate inner product between half a q4_1 block and 16 floats (yl), sumy is SUM(yl[i])
+ // il indicates where the q4 quants begin (0 or QK4_1/4)
+@@ -227,30 +238,39 @@
+     const short il = (tiisg%2)*8;
+ 
+     device const float * yb = y + ix*QK4_0;
++    // yb_chunk_for_original_sumy points to the relevant 16-float part based on 'il' for original sumy calculation
++    device const float * yb_chunk_for_original_sumy = yb + (il/8) * 16;
++    
+     float sumy = 0;
+     for (int i = 0; i < 8; i += 2) {
+-        sumy += yb[i] + yb[i+1];
++        sumy += yb_chunk_for_original_sumy[i] + yb_chunk_for_original_sumy[i+1];
+     }
+ 
+     const float dall = x[ib].d;
+     const float dmin = x[ib].m;
+ 
+-    float sum = block_q_n_dot_y(x_curr, sumy, yb, il);
++    // Call the new vectorized version with the correct il_dequant_base
++    float sum = block_q_n_dot_y(x_curr, yb + (il/8) * 16, il);
+ 
+     sumf[tiisg] = sum;
+ 
+     //
+     // Accumulate the sum from all threads in the threadgroup
+     //
+-    threadgroup_barrier(mem_flags::mem_threadgroup);
+-    for (uint i = simdgroup_size / 2; i > 0; i /= 2) {
+-        sumf[tiisg] += sumf[tiisg + i];
+-        threadgroup_barrier(mem_flags::mem_threadgroup);
+-    }
++    threadgroup_barrier(mem_flags::mem_threadgroup); 
++    for (uint i = simdgroup_size/2; i > 0; i /= 2) {
++        if (tiisg < i) {
++            sumf[tiisg] += sumf[tiisg + i];
++        }
++        threadgroup_barrier(mem_flags::mem_threadgroup);
++    }
++    
++    // Only the first thread in the threadgroup writes the result
++    if (tiisg == 0) {
++        const float total_sum = sumf[0] * dall + dmin * sumy;
++        dst[row*n + block_idx] = total_sum;
++    }
++}
+ 
+-    const float total_sum = sumf[0] * dall + dmin * sumy;
+-    dst[row*n + block_idx] = total_sum;
+-}
+ 
+ kernel void kernel_mul_mat_q4_0_f32(
+         device const  void * src0,

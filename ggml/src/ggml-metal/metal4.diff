@@ -1,0 +1,30 @@
+--- a/ggml/src/ggml-metal/ggml-metal.metal
++++ b/ggml/src/ggml-metal/ggml-metal.metal
+@@ -37,20 +37,20 @@
+ template <typename type4x4>
+ void dequantize_q4_0(device const block_q4_0 * xb, short il, thread type4x4 & reg) {
+     device const uint16_t * qs = ((device const uint16_t *)xb + 1);
+-    const float d1 = il ? (xb->d / 16.h) : xb->d;
+-    const float d2 = d1 / 256.f;
+-    const float md = -8.h * xb->d;
++    const half d1_h = il ? (xb->d / (half)16.0h) : xb->d; // xb->d is half
++    const half d2_h = d1_h / (half)256.0h;
++    const half md_h = (half)-8.0h * xb->d;
+     const ushort mask0 = il ? 0x00F0 : 0x000F;
+     const ushort mask1 = mask0 << 8;
+ 
+-    float4x4 reg_f;
++    half4x4 reg_h; // Work in half precision
+ 
+     for (int i = 0; i < 8; i++) {
+-        reg_f[i/2][2*(i%2) + 0] = d1 * (qs[i] & mask0) + md;
+-        reg_f[i/2][2*(i%2) + 1] = d2 * (qs[i] & mask1) + md;
++        reg_h[i/2][2*(i%2) + 0] = d1_h * half(qs[i] & mask0) + md_h;
++        reg_h[i/2][2*(i%2) + 1] = d2_h * half(qs[i] & mask1) + md_h;
+     }
+ 
+-    reg = (type4x4) reg_f;
++    reg = reg_h; // Assign half4x4 to type4x4 (which is half4x4 for mul_mm_q4_0_f32)
+ }
+ 
+ template <typename type4>
