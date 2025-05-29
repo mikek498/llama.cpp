@@ -2800,7 +2800,7 @@ static bool ggml_metal_encode_node(
 
                 // find the break-even point where the matrix-matrix kernel becomes more efficient compared
                 // to the matrix-vector kernel
-                const int ne11_mm_min = 4;
+                const int ne11_mm_min = 16;
 
                 // first try to use small-batch mat-mv kernels
                 // these should be efficient for BS [2, ~8]
@@ -2981,7 +2981,7 @@ static bool ggml_metal_encode_node(
                         !ggml_is_transposed(src1) &&
                         src1t == GGML_TYPE_F32 &&
                         ne00 % 32 == 0 && ne00 >= 64 &&
-                        (ne11 > ne11_mm_min || (ggml_is_quantized(src0t) && ne12 > 1))) {
+                        (ne11 >= ne11_mm_min || (ggml_is_quantized(src0t) && ne12 > 1))) {
                     //printf("matrix: ne00 = %6d, ne01 = %6d, ne02 = %6d, ne11 = %6d, ne12 = %6d\n", ne00, ne01, ne02, ne11, ne12);
 
                     // some Metal matrix data types require aligned pointers

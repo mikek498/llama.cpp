@@ -3231,24 +3231,23 @@ static void ggml_compute_forward_norm_f32(
                 const float * x_ptr = (const float *) ((char *) src0->data + i01*nb01 + i02*nb02 + i03*nb03);
                       float * y_ptr =       (float *) ((char *)  dst->data + i01*nb1  + i02*nb2  + i03*nb3);
 
-                if (src0->data != dst->data) {
-                    memcpy(y_ptr, x_ptr, ne00 * sizeof(float));
+                // Calculate mean of values
+                float mean_val;
+                vDSP_meanv(x_ptr, 1, &mean_val, ne00);
+
+                // Subtract mean from each value: y = x - mean
+                float neg_mean_val = -mean_val;
+                vDSP_vsadd(x_ptr, 1, &neg_mean_val, y_ptr, 1, ne00);
+
+                // Calculate sum of squares of centered values
+                float sum_sq_centered = 0.0f;
+                for (int i = 0; i < ne00; i++) {
+                    sum_sq_centered += y_ptr[i] * y_ptr[i];
                 }
-                // If inplace, y_ptr already has the data of x_ptr.
-
-                float sum_sq;
-                // Use y_ptr as input if inplace, otherwise x_ptr is fine (though y_ptr would also work after memcpy).
-                // For clarity and directness, if not inplace, using x_ptr for sum_sq is slightly cleaner.
-                // However, the problem asks to use y as source for vDSP_vssqf if inplace.
-                // If not inplace, y_ptr is a copy of x_ptr, so using y_ptr is also correct.
-                // Let's consistently use y_ptr if it's guaranteed to have the correct source data.
-                const float * const src_for_vssqf = (src0->data == dst->data) ? y_ptr : x_ptr;
-                vDSP_vssqf(src_for_vssqf, 1, &sum_sq, ne00);
-
-                const float mean = sum_sq / ne00;
-                const float scale_val = 1.0f / sqrtf(mean + eps);
                 
-                // vDSP_vsmul scales and then stores, so y_ptr is both source (after potential memcpy) and destination.
+                const float variance = sum_sq_centered / ne00;
+                const float scale_val = 1.0f / sqrtf(variance + eps);
+                
                 vDSP_vsmul(y_ptr, 1, &scale_val, y_ptr, 1, ne00);
 
 #else // Fallback to original C-loop implementation
@@ -3274,6 +3273,7 @@ static void ggml_compute_forward_norm_f32(
                 const float scale = 1.0f/sqrtf(variance + eps);
 
                 ggml_vec_scale_f32(ne00, y, scale);
+#endif
             }
         }
     }
@@ -3327,18 +3327,19 @@ static void ggml_compute_forward_rms_norm_f32(
                 const float * x_ptr = (const float *) ((char *) src0->data + i01*nb01 + i02*nb02 + i03*nb03);
                       float * y_ptr =       (float *) ((char *)  dst->data + i01*nb1  + i02*nb2  + i03*nb3);
 
-                float mean_val;
-                vDSP_meanv(x_ptr, 1, &mean_val, ne00);
-
-                float neg_mean_val = -mean_val;
-                vDSP_vsadd(x_ptr, 1, &neg_mean_val, y_ptr, 1, ne00);
-
-                float sum_sq_centered;
-                vDSP_vssqf(y_ptr, 1, &sum_sq_centered, ne00);
+                // For RMS norm, we need sum of squares of original values (not centered)
+                float sum_sq = 0.0f;
+                for (int i = 0; i < ne00; i++) {
+                    sum_sq += x_ptr[i] * x_ptr[i];
+                }
                 
-                const float variance = sum_sq_centered / ne00;
-                const float scale_val = 1.0f / sqrtf(variance + eps);
-
+                const float mean = sum_sq / ne00;
+                const float scale_val = 1.0f / sqrtf(mean + eps);
+                
+                // Copy input to output and scale
+                if (src0->data != dst->data) {
+                    memcpy(y_ptr, x_ptr, ne00 * sizeof(float));
+                }
                 vDSP_vsmul(y_ptr, 1, &scale_val, y_ptr, 1, ne00);
 #else // Fallback to original C-loop implementation
                 const float * x = (float *) ((char *) src0->data + i01*nb01 + i02*nb02 + i03*nb03);
@@ -3694,7 +3695,6 @@ static void ggml_compute_forward_l2_norm_f32(
                 const float scale = 1.0f/fmaxf(sqrtf(sum), eps);
 
                 ggml_vec_scale_f32(ne00, y, scale);
-#endif
             }
         }
     }

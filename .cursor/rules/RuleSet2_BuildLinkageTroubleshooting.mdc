@@ -1,0 +1,36 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+**Rule Set 2: Build, Linkage, & Python Script Troubleshooting**
+
+*   **Goal:** Systematically resolve issues preventing successful compilation, linking, and execution of build orchestration scripts, with detailed attention to error messages and toolchain specifics.
+*   **2.1. Diagnose Python Script Failures:**
+    *   *Instruction:* If a Python build script (e.g., `setup_env.py`) fails, meticulously analyze the traceback and error message. Determine if the failure is in argument parsing, path validation, command generation, or subprocess execution.
+    *   *Method:* Use `read_file` for the script. Add `print()` statements around suspect calls or use `python -m pdb <script.py> <args>` for interactive debugging if necessary. Verify file system paths and permissions it uses.
+*   **2.2. Diagnose Compilation Errors:**
+    *   *Instruction:* Parse compiler errors thoroughly. Categorize them: syntax, type mismatches, undeclared identifiers, inline assembly issues (e.g., incorrect `wzr` usage, operand constraints), unrecognized intrinsics, Metal shader compilation failures (MSL syntax, type mismatches), or preprocessor errors (#endif without #if, incorrect macro expansion).
+    *   *Method:* Analyze compiler stdout/stderr (e.g., from `logs/compile.log` or direct build output). Use `grep_search` for specific error patterns in source files.
+    *   **Sub-Rule (ARM M1 Intrinsic/Assembly):**
+        *   *Instruction:* For NEON/assembly issues: Verify `arm_neon.h` inclusion and correct compiler flags. For `.S` files on macOS, ensure Apple assembler compatible syntax (e.g., `.global _symbol`, `.align`; `.type` and `.size` directives may need adjustment/removal). Guide the user on these platform specifics.
+        *   *Method:* Use `read_file` for sources/assembly. Check build logs/scripts for flags. Refer to Apple's assembly language guide if complex issues arise.
+        *   *Instruction:* For inline assembly: Validate syntax against Apple Clang. Check operand constraints, clobber lists, and register usage. If highly complex or error-prone, discuss replacing with C/C++ intrinsics with the user.
+        *   *Method:* Use `read_file` to inspect inline assembly. Propose `edit_file` for corrections or refactoring.
+    *   **Sub-Rule (Metal Shader Issues):**
+        *   *Instruction:* For `.metal` file compilation failures: Verify MSL syntax, type agreement between C++/Objective-C and MSL, kernel function signatures, and buffer/texture binding attributes.
+        *   *Method:* Use `read_file` for `.metal` files and corresponding C++/Objective-C files. Suggest `edit_file` for corrections.
+*   **2.3. Diagnose Linker Errors ("Undefined Symbol"):**
+    *   *Instruction:* Identify the exact undefined symbol(s). Determine if C++ name mangling is involved. Pinpoint the expected defining location (C/C++ source, assembly, library, Metal object file).
+    *   *Method:* Analyze linker output. Use `run_terminal_cmd` with `nm <object_file_or_library>` to inspect symbol tables. Use `grep_search` for the symbol definition in the codebase.
+    *   *Instruction:* For C/C++/Assembly/Objective-C interoperation: Verify correct use of `extern "C"`. For macOS assembly, ensure the `.S` definition (e.g., `_my_function`) matches the C/C++ declaration considering the leading underscore ABI.
+    *   *Method:* Use `read_file` to inspect headers, source files, and `.S` files. Propose `edit_file` to add `extern "C"` or correct symbol names.
+    *   *Instruction:* Confirm all necessary object files, static/dynamic libraries, and frameworks (e.g., `-framework MetalKit`, `-framework Foundation` for Metal) are correctly passed to the linker with proper paths.
+    *   *Method:* Use `read_file` for `CMakeLists.txt` (`target_link_libraries`), Makefiles, or build script linker commands.
+*   **2.4. Iteratively Apply and Verify Fixes:**
+    *   *Instruction:* Based on diagnosis, propose and apply precise code modifications using `edit_file`. Examples: add `extern "C"`, correct assembly symbols, adjust CMake flags, fix MSL syntax, or modify Python script logic. Make one logical change at a time.
+    *   *Method:* Explain the proposed change clearly. Use `edit_file` with specific instructions.
+    *   *Instruction:* After each significant change, guide the user to perform a clean rebuild (e.g., `rm -rf build && cmake .. && make`, or via the Python build script). Confirm the specific error is resolved before proceeding. If an edit doesn't apply as expected, use `reapply`.
+    *   *Method:* Provide exact clean and build commands using `run_terminal_cmd`. Check output for success or new errors.
+    *   *Instruction:* Strongly encourage committing each successful, atomic fix to Git (e.g., `git commit -m 'Fix: Resolved undefined symbol _foo in bar.S for macOS compatibility'`).
+    *   *Method:* Remind the user to commit. If asked, suggest a commit message.

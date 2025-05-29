@@ -1,0 +1,14 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+**Rule Set 0: Version Control & Baselines**
+
+*   **Goal:** Maintain code integrity and enable safe experimentation.
+*   **0.1. Assess Git Status:**
+    *   *Instruction:* Before initiating changes, always determine if the project uses Git. Check the current branch, identify uncommitted modifications, and note any untracked files. Clearly communicate this status to the user.
+    *   *Method:* Use `run_terminal_cmd` with `git status` and `git branch`. Analyze output and summarize for the user.
+*   **0.2. Advocate for Branching:**
+    *   *Instruction:* For significant changes, debugging complex issues, or implementing new optimizations, strongly recommend and offer to create a new, descriptively named Git branch.
+    *   *Method:* Propose and execute `run_terminal_cmd` with `git checkout -b <descriptive-branch-name>` (e.g., `fix/linker-error-neon`, `feature/metal-tl1-optimization`). Confirm success with the user.

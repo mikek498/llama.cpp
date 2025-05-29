@@ -2492,14 +2492,18 @@ kernel void kernel_mul_mv(
         tiisg);
 }
 
-typedef decltype(kernel_mul_mv<half, half4, half, half4>) mul_mv_t;
+typedef decltype(kernel_mul_mv<float, float4, float, float4>) mul_mv_f32_f32_t;
+typedef decltype(kernel_mul_mv<half, half4, float, float4>) mul_mv_f16_f32_t;
+typedef decltype(kernel_mul_mv<half, half4, half, half4>) mul_mv_f16_f16_t;
 
-template [[host_name("kernel_mul_mv_f32_f32")]]   kernel mul_mv_t kernel_mul_mv<float,  float4,  float,  float4>;
-template [[host_name("kernel_mul_mv_f16_f32")]]   kernel mul_mv_t kernel_mul_mv<half,   half4,   float,  float4>;
-template [[host_name("kernel_mul_mv_f16_f16")]]   kernel mul_mv_t kernel_mul_mv<half,   half4,   half,   half4>;
+template [[host_name("kernel_mul_mv_f32_f32")]]   kernel mul_mv_f32_f32_t kernel_mul_mv<float,  float4,  float,  float4>;
+template [[host_name("kernel_mul_mv_f16_f32")]]   kernel mul_mv_f16_f32_t kernel_mul_mv<half,   half4,   float,  float4>;
+template [[host_name("kernel_mul_mv_f16_f16")]]   kernel mul_mv_f16_f16_t kernel_mul_mv<half,   half4,   half,   half4>;
 #if defined(GGML_METAL_USE_BF16)
-template [[host_name("kernel_mul_mv_bf16_f32")]]  kernel mul_mv_t kernel_mul_mv<bfloat, bfloat4, float,  float4>;
-template [[host_name("kernel_mul_mv_bf16_bf16")]] kernel mul_mv_t kernel_mul_mv<bfloat, bfloat4, bfloat, bfloat4>;
+typedef decltype(kernel_mul_mv<bfloat, bfloat4, float, float4>) mul_mv_bf16_f32_t;
+typedef decltype(kernel_mul_mv<bfloat, bfloat4, bfloat, bfloat4>) mul_mv_bf16_bf16_t;
+template [[host_name("kernel_mul_mv_bf16_f32")]]  kernel mul_mv_bf16_f32_t kernel_mul_mv<bfloat, bfloat4, float,  float4>;
+template [[host_name("kernel_mul_mv_bf16_bf16")]] kernel mul_mv_bf16_bf16_t kernel_mul_mv<bfloat, bfloat4, bfloat, bfloat4>;
 #endif
 
 template<typename T, typename T4>
@@ -6806,12 +6810,18 @@ template [[host_name("kernel_get_rows_iq4_xs")]]  kernel get_rows_q_t kernel_get
 // matrix-matrix multiplication
 //
 
-typedef decltype(kernel_mul_mm<half, half4x4, simdgroup_half8x8, float4x4, 1, dequantize_f32>) mul_mm_t;
-
-template [[host_name("kernel_mul_mm_f32_f32")]]     kernel mul_mm_t kernel_mul_mm<half,   half4x4,   simdgroup_half8x8,   float4x4,      1,     dequantize_f32>;
-template [[host_name("kernel_mul_mm_f16_f32")]]     kernel mul_mm_t kernel_mul_mm<half,   half4x4,   simdgroup_half8x8,   half4x4,       1,     dequantize_f16>;
+typedef decltype(kernel_mul_mm<float, float4x4, simdgroup_float8x8, float4x4, 1, dequantize_f32>) mul_mm_f32_f32_t;
+typedef decltype(kernel_mul_mm<half, half4x4, simdgroup_half8x8, half4x4, 1, dequantize_f16>) mul_mm_f16_f32_t;
 #if defined(GGML_METAL_USE_BF16)
-template [[host_name("kernel_mul_mm_bf16_f32")]]    kernel mul_mm_t kernel_mul_mm<bfloat, bfloat4x4, simdgroup_bfloat8x8, bfloat4x4,     1,     dequantize_bf16>;
+typedef decltype(kernel_mul_mm<bfloat, bfloat4x4, simdgroup_bfloat8x8, bfloat4x4, 1, dequantize_bf16>) mul_mm_bf16_f32_t;
+#endif
+// Default typedef for quantized matrix-matrix operations (using half precision)
+typedef decltype(kernel_mul_mm<half, half4x4, simdgroup_half8x8, block_q4_0, 2, dequantize_q4_0>) mul_mm_t;
+
+template [[host_name("kernel_mul_mm_f32_f32")]]     kernel mul_mm_f32_f32_t kernel_mul_mm<float,  float4x4,  simdgroup_float8x8,  float4x4,      1,     dequantize_f32>;
+template [[host_name("kernel_mul_mm_f16_f32")]]     kernel mul_mm_f16_f32_t kernel_mul_mm<half,   half4x4,   simdgroup_half8x8,   half4x4,       1,     dequantize_f16>;
+#if defined(GGML_METAL_USE_BF16)
+template [[host_name("kernel_mul_mm_bf16_f32")]]    kernel mul_mm_bf16_f32_t kernel_mul_mm<bfloat, bfloat4x4, simdgroup_bfloat8x8, bfloat4x4,     1,     dequantize_bf16>;
 #endif
 template [[host_name("kernel_mul_mm_q4_0_f32")]]    kernel mul_mm_t kernel_mul_mm<half,   half4x4,   simdgroup_half8x8,   block_q4_0,    2,     dequantize_q4_0>;
 template [[host_name("kernel_mul_mm_q4_1_f32")]]    kernel mul_mm_t kernel_mul_mm<half,   half4x4,   simdgroup_half8x8,   block_q4_1,    2,     dequantize_q4_1>;

@@ -106,36 +106,43 @@ static void apply_unary_op(const ggml_compute_params * params, ggml_tensor * dst
             // nb00 is src0->nb[0], which is sizeof(src0_t)
             // The tensors are contiguous by assertion.
             if (op == op_abs) {
-                vDSP_vabsf((const float*)src0_ptr, 1, (float*)dst_ptr, 1, ne00);
+                vDSP_vabs((const float*)src0_ptr, 1, (float*)dst_ptr, 1, ne00);
                 continue;
             }
             if (op == op_neg) {
-                vDSP_vnegf((const float*)src0_ptr, 1, (float*)dst_ptr, 1, ne00);
+                vDSP_vneg((const float*)src0_ptr, 1, (float*)dst_ptr, 1, ne00);
                 continue;
             }
             if (op == op_sqr) {
-                vDSP_vsqf((const float*)src0_ptr, 1, (float*)dst_ptr, 1, ne00);
+                vDSP_vsq((const float*)src0_ptr, 1, (float*)dst_ptr, 1, ne00);
                 continue;
             }
             if (op == op_sqrt) {
-                vDSP_vsqrtf((const float*)src0_ptr, 1, (float*)dst_ptr, 1, ne00);
+                // Manual loop for sqrt as vForce requires int* count
+                for (vDSP_Length i = 0; i < ne00; i++) {
+                    ((float*)dst_ptr)[i] = sqrtf(((const float*)src0_ptr)[i]);
+                }
                 continue;
             }
             if (op == op_log) {
-                vDSP_vlog((const float*)src0_ptr, 1, (float*)dst_ptr, 1, ne00);
+                // Manual loop for log as vForce requires int* count  
+                for (vDSP_Length i = 0; i < ne00; i++) {
+                    ((float*)dst_ptr)[i] = logf(((const float*)src0_ptr)[i]);
+                }
                 continue;
             }
             if (op == op_exp) {
-                vDSP_vexp((const float*)src0_ptr, 1, (float*)dst_ptr, 1, ne00);
+                // Manual loop for exp as vForce requires int* count
+                for (vDSP_Length i = 0; i < ne00; i++) {
+                    ((float*)dst_ptr)[i] = expf(((const float*)src0_ptr)[i]);
+                }
                 continue;
             }
             if (op == op_tanh) {
-                // For vDSP_vtanh, the signature is vDSP_vtanh(destination, source, count_pointer)
-                // Apple's documentation for vDSP_vtanh:
-                // void vDSP_vtanh ( float *__C, const float *__A, const vDSP_Length *__N );
-                // C is destination, A is source. N is a pointer to length.
-                vDSP_Length ne00_len = ne00;
-                vDSP_vtanh((float*)dst_ptr, (const float*)src0_ptr, &ne00_len);
+                // Manual loop for tanh as vForce requires int* count
+                for (vDSP_Length i = 0; i < ne00; i++) {
+                    ((float*)dst_ptr)[i] = tanhf(((const float*)src0_ptr)[i]);
+                }
                 continue;
             }
         }
