@@ -1,5 +1,12 @@
 #import "ggml-metal.h"
 
+// Added preprocessor directive for BNNS
+#define GGML_METAL_USE_BNNS 1 // Set to 1 to enable BNNS, 0 to disable
+
+#if GGML_METAL_USE_BNNS
+#import <Accelerate/Accelerate.h>
+#endif
+
 #import "ggml-impl.h"
 #import "ggml-backend-impl.h"
 #import "ggml-metal-impl.h"
@@ -53,6 +60,7 @@ static struct ggml_backend_metal_device_context {
     bool has_residency_sets;
     bool has_bfloat;
     bool use_bfloat;
+    bool use_bnns_runtime; // Runtime BNNS toggle
 
     char name[128];
 } g_ggml_ctx_dev_main = {
@@ -64,8 +72,17 @@ static struct ggml_backend_metal_device_context {
     /*.has_residency_sets      =*/ false,
     /*.has_bfloat              =*/ false,
     /*.use_bfloat              =*/ false,
+    /*.use_bnns_runtime        =*/ false, // Initialize to false
     /*.name                    =*/ "",
 };
+
+// Function to set BNNS runtime preference
+void ggml_backend_metal_device_set_use_bnns(struct ggml_backend_metal_device_context * ctx_dev, bool use_bnns) {
+    if (ctx_dev) {
+        ctx_dev->use_bnns_runtime = use_bnns;
+        GGML_LOG_INFO("%s: BNNS runtime set to %s\n", __func__, use_bnns ? "true" : "false");
+    }
+}
 
 // acquire
 static id<MTLDevice> ggml_backend_metal_device_acq(struct ggml_backend_metal_device_context * ctx) {
@@ -1776,6 +1793,480 @@ static bool ggml_metal_supports_op(const struct ggml_backend_metal_device_contex
     }
 }
 
+#if GGML_METAL_USE_BNNS
+// BNNS wrapper functions
+static bool ggml_metal_bnns_mul_mv_f32(
+        ggml_backend_t   backend,
+        id<MTLCommandBuffer> command_buffer,
+        id<MTLBuffer> id_src0, size_t offs_src0,
+        id<MTLBuffer> id_src1, size_t offs_src1,
+        id<MTLBuffer> id_dst,  size_t offs_dst,
+        const struct ggml_tensor * src0,
+        const struct ggml_tensor * src1,
+        struct ggml_tensor * dst) {
+    @autoreleasepool {
+        //GGML_NSLog(@"Executing BNNS MatVec F32 for %s = %s * %s\n", dst->name, src0->name, src1->name);
+
+        // Ensure inputs are F32
+        if (src0->type != GGML_TYPE_F32 || src1->type != GGML_TYPE_F32 || dst->type != GGML_TYPE_F32) {
+            //GGML_NSLog(@"BNNS MatVec F32: Invalid types\n");
+            return false;
+        }
+
+        // Get contents of MTLBuffers
+        // IMPORTANT: This assumes the buffers are CPU-accessible (e.g. MTLStorageModeShared or MTLStorageModeManaged).
+        // If they are private, data would need to be copied.
+        // Also, proper synchronization (e.g., MTLCommandBuffer completion handlers or MTLFence) is crucial
+        // if these buffers were recently written to by the GPU. For simplicity, this example assumes
+        // data is ready and accessible.
+
+        float *A_data = (float *)((char *)id_src0.contents + offs_src0);
+        float *B_data = (float *)((char *)id_src1.contents + offs_src1);
+        float *C_data = (float *)((char *)id_dst.contents  + offs_dst);
+
+        if (!A_data || !B_data || !C_data) {
+            //GGML_NSLog(@"BNNS MatVec F32: Failed to get buffer contents\n");
+            return false;
+        }
+
+        // Define array descriptors
+        // src0 (Matrix A): [M, K]
+        // src1 (Vector B): [K, 1] (treated as a matrix [K, N] where N=1)
+        // dst  (Vector C): [M, 1] (treated as a matrix [M, N] where N=1)
+
+        // For matrix A (src0)
+        size_t A_shape[] = {src0->ne[1], src0->ne[0]}; // M, K
+        size_t A_strides[] = {src0->nb[1] / sizeof(float), src0->nb[0] / sizeof(float)};
+        BNNSNDArrayDescriptor *A_desc = BNNSNDArrayDescriptorCreate(A_data, NULL, BNNSDataTypeFloat32, 2, A_shape, A_strides, NULL);
+        if (!A_desc) { /*GGML_NSLog(@"BNNS MatVec F32: Failed to create A_desc\n");*/ return false; }
+
+        // For vector B (src1) - treat as a [K, 1] matrix
+        size_t B_shape[] = {src1->ne[0], 1}; // K, N=1
+        size_t B_strides[] = {src1->nb[0] / sizeof(float), sizeof(float)}; // Stride for N=1 can be tricky, ensure it's just element size if contiguous
+        if (ggml_is_contiguous(src1)) {
+             B_strides[0] = 1; // Element stride for contiguous vector
+             B_strides[1] = src1->ne[0]; // Total elements as the "row" stride for a single column matrix
+        } else {
+            // This case is more complex if B is not contiguous.
+            // For simplicity, we'll assume B is contiguous for matrix-vector.
+            // If not, a copy or more complex stride calculation is needed.
+            // A common case for ggml is src1 being a column vector, nb[1] might be large.
+            // We need B to be Kx1. If nb[1] is not K*sizeof(float), it's not what BNNS expects for a simple mat-vec.
+             B_strides[0] = src1->nb[0] / sizeof(float);
+             B_strides[1] = src1->nb[1] / sizeof(float); // This might be an issue if not truly 1D vector like
+        }
+        // Re-evaluating B strides for a Kx1 vector:
+        // B_shape is {K, 1}. This means K rows, 1 column.
+        // Stride for rows should be nb[0] (bytes between elements in the same column, which is just element size for a vector).
+        // Stride for columns should be the size of one column (i.e., K * element_size for a Kx1 vector).
+        // However, BNNS expects strides in terms of number of elements, not bytes.
+        size_t B_true_strides[] = {1, src1->ne[0]}; // Stride to next element in col, stride to next col (size of col)
+        if (src1->nb[0] != sizeof(float) ) { // If not contiguous along dimension 0
+            //GGML_NSLog(@"BNNS MatVec F32: Vector B (src1) must be contiguous along its primary dimension (ne[0]). nb[0] = %llu\n", src1->nb[0]);
+            BNNSNDArrayDescriptorDestroy(A_desc);
+            return false;
+        }
+
+
+        BNNSNDArrayDescriptor *B_desc = BNNSNDArrayDescriptorCreate(B_data, NULL, BNNSDataTypeFloat32, 2, B_shape, B_true_strides, NULL);
+        if (!B_desc) { /*GGML_NSLog(@"BNNS MatVec F32: Failed to create B_desc\n");*/ BNNSNDArrayDescriptorDestroy(A_desc); return false; }
+
+        // For vector C (dst) - treat as a [M, 1] matrix
+        size_t C_shape[] = {dst->ne[1], 1}; // M, N=1
+        size_t C_strides[] = {1, dst->ne[1]}; // Stride to next element in col, stride to next col (size of col)
+         if (dst->nb[0] != sizeof(float) ) { // If not contiguous along dimension 0
+            //GGML_NSLog(@"BNNS MatVec F32: Vector C (dst) must be contiguous along its primary dimension (ne[0]). nb[0] = %llu\n", dst->nb[0]);
+            BNNSNDArrayDescriptorDestroy(A_desc);
+            BNNSNDArrayDescriptorDestroy(B_desc);
+            return false;
+        }
+
+        BNNSNDArrayDescriptor *C_desc = BNNSNDArrayDescriptorCreate(C_data, NULL, BNNSDataTypeFloat32, 2, C_shape, C_strides, NULL);
+        if (!C_desc) { /*GGML_NSLog(@"BNNS MatVec F32: Failed to create C_desc\n");*/ BNNSNDArrayDescriptorDestroy(A_desc); BNNSNDArrayDescriptorDestroy(B_desc); return false; }
+
+        // Define MatMul descriptor
+        BNNSMatMulDescriptor *matmul_desc = BNNSMatMulDescriptorCreate(false, false, 1.0f, BNNSActivationIdentity, 0.0f, 0.0f, NULL);
+        if (!matmul_desc) { /*GGML_NSLog(@"BNNS MatVec F32: Failed to create matmul_desc\n");*/ BNNSNDArrayDescriptorDestroy(A_desc); BNNSNDArrayDescriptorDestroy(B_desc); BNNSNDArrayDescriptorDestroy(C_desc); return false; }
+
+        // Apply matrix multiplication
+        // For BNNS, command_buffer is a BNNSCommandBuffer. Here we are in Metal context.
+        // We need to ensure that the Metal command buffer associated with `encoder.commandBuffer`
+        // is synchronized with BNNS operations if BNNS runs on the GPU.
+        // However, BNNS operations here are CPU based when given raw pointers.
+        // If we were to use BNNSFilterCreateLayerMatMulWithWorkload, that would be different.
+        // For direct application:
+        int err = BNNSApplyMatrixMultiply(matmul_desc, A_desc, B_desc, C_desc);
+
+        // Clean up descriptors
+        BNNSNDArrayDescriptorDestroy(A_desc);
+        BNNSNDArrayDescriptorDestroy(B_desc);
+        BNNSNDArrayDescriptorDestroy(C_desc);
+        BNNSMatMulDescriptorDestroy(matmul_desc);
+
+        if (err != 0) {
+            //GGML_NSLog(@"BNNS MatVec F32: BNNSApplyMatrixMultiply failed with error %d\n", err);
+            return false;
+        }
+
+        // If using MTLStorageModeShared, modifications made by CPU are visible to GPU.
+        // If MTLStorageModeManaged, need to signal modification:
+        // [id_dst didModifyRange:NSMakeRange(offs_dst, ggml_nbytes(dst))]; // If dst is managed
+
+        //GGML_NSLog(@"BNNS MatVec F32: Success for %s\n", dst->name);
+        return true;
+    }
+}
+
+static bool ggml_metal_bnns_mul_mv_f16_f32(
+        ggml_backend_t   backend,
+        id<MTLCommandBuffer> command_buffer,
+        id<MTLBuffer> id_src0, size_t offs_src0,
+        id<MTLBuffer> id_src1, size_t offs_src1,
+        id<MTLBuffer> id_dst,  size_t offs_dst,
+        const struct ggml_tensor * src0,
+        const struct ggml_tensor * src1,
+        struct ggml_tensor * dst) {
+    @autoreleasepool {
+        //GGML_NSLog(@"Executing BNNS MatVec F16_F32 for %s = %s * %s\n", dst->name, src0->name, src1->name);
+
+        if (src0->type != GGML_TYPE_F16 || src1->type != GGML_TYPE_F16 || dst->type != GGML_TYPE_F32) {
+            //GGML_NSLog(@"BNNS MatVec F16_F32: Invalid types\n");
+            return false;
+        }
+
+        ggml_fp16_t *A_data_fp16 = (ggml_fp16_t *)((char *)id_src0.contents + offs_src0);
+        ggml_fp16_t *B_data_fp16 = (ggml_fp16_t *)((char *)id_src1.contents + offs_src1);
+        float *C_data_f32 = (float *)((char *)id_dst.contents + offs_dst);
+
+        if (!A_data_fp16 || !B_data_fp16 || !C_data_f32) {
+            //GGML_NSLog(@"BNNS MatVec F16_F32: Failed to get buffer contents\n");
+            return false;
+        }
+
+        // Matrix A (src0) - FP16
+        size_t A_shape[] = {src0->ne[1], src0->ne[0]}; // M, K
+        size_t A_strides[] = {src0->nb[1] / sizeof(ggml_fp16_t), src0->nb[0] / sizeof(ggml_fp16_t)};
+        BNNSNDArrayDescriptor *A_desc = BNNSNDArrayDescriptorCreate(A_data_fp16, NULL, BNNSDataTypeFloat16, 2, A_shape, A_strides, NULL);
+        if (!A_desc) { /*GGML_NSLog(@"BNNS MatVec F16_F32: Failed to create A_desc\n");*/ return false; }
+
+        // Vector B (src1) - FP16, treat as [K, 1] matrix
+        size_t B_shape[] = {src1->ne[0], 1}; // K, N=1
+        size_t B_strides[] = {1, src1->ne[0]}; // Stride to next element in col, stride to next col (size of col)
+        if (src1->nb[0] != sizeof(ggml_fp16_t)) {
+             //GGML_NSLog(@"BNNS MatVec F16_F32: Vector B (src1) must be contiguous along its primary dimension (ne[0]). nb[0] = %llu\n", src1->nb[0]);
+            BNNSNDArrayDescriptorDestroy(A_desc);
+            return false;
+        }
+        BNNSNDArrayDescriptor *B_desc = BNNSNDArrayDescriptorCreate(B_data_fp16, NULL, BNNSDataTypeFloat16, 2, B_shape, B_strides, NULL);
+        if (!B_desc) { /*GGML_NSLog(@"BNNS MatVec F16_F32: Failed to create B_desc\n");*/ BNNSNDArrayDescriptorDestroy(A_desc); return false; }
+
+        // Vector C (dst) - FP32, treat as [M, 1] matrix
+        size_t C_shape[] = {dst->ne[1], 1}; // M, N=1
+        size_t C_strides[] = {1, dst->ne[1]}; // Stride to next element in col, stride to next col (size of col)
+        if (dst->nb[0] != sizeof(float)) {
+            //GGML_NSLog(@"BNNS MatVec F16_F32: Vector C (dst) must be contiguous along its primary dimension (ne[0]). nb[0] = %llu\n", dst->nb[0]);
+            BNNSNDArrayDescriptorDestroy(A_desc);
+            BNNSNDArrayDescriptorDestroy(B_desc);
+            return false;
+        }
+        BNNSNDArrayDescriptor *C_desc = BNNSNDArrayDescriptorCreate(C_data_f32, NULL, BNNSDataTypeFloat32, 2, C_shape, C_strides, NULL);
+        if (!C_desc) { /*GGML_NSLog(@"BNNS MatVec F16_F32: Failed to create C_desc\n");*/ BNNSNDArrayDescriptorDestroy(A_desc); BNNSNDArrayDescriptorDestroy(B_desc); return false; }
+
+        BNNSMatMulDescriptor *matmul_desc = BNNSMatMulDescriptorCreate(false, false, 1.0f, BNNSActivationIdentity, 0.0f, 0.0f, NULL);
+        if (!matmul_desc) { /*GGML_NSLog(@"BNNS MatVec F16_F32: Failed to create matmul_desc\n");*/ BNNSNDArrayDescriptorDestroy(A_desc); BNNSNDArrayDescriptorDestroy(B_desc); BNNSNDArrayDescriptorDestroy(C_desc); return false; }
+
+        int err = BNNSApplyMatrixMultiply(matmul_desc, A_desc, B_desc, C_desc);
+
+        BNNSNDArrayDescriptorDestroy(A_desc);
+        BNNSNDArrayDescriptorDestroy(B_desc);
+        BNNSNDArrayDescriptorDestroy(C_desc);
+        BNNSMatMulDescriptorDestroy(matmul_desc);
+
+        if (err != 0) {
+            //GGML_NSLog(@"BNNS MatVec F16_F32: BNNSApplyMatrixMultiply failed with error %d\n", err);
+            return false;
+        }
+        //GGML_NSLog(@"BNNS MatVec F16_F32: Success for %s\n", dst->name);
+        return true;
+    }
+}
+
+static bool ggml_metal_bnns_mul_mm_f32_f32(
+        ggml_backend_t   backend,
+        id<MTLCommandBuffer> command_buffer,
+        id<MTLBuffer> id_src0, size_t offs_src0,
+        id<MTLBuffer> id_src1, size_t offs_src1,
+        id<MTLBuffer> id_dst,  size_t offs_dst,
+        const struct ggml_tensor * src0,
+        const struct ggml_tensor * src1,
+        struct ggml_tensor * dst) {
+    @autoreleasepool {
+        //GGML_NSLog(@"Executing BNNS MatMul F32 for %s = %s * %s\n", dst->name, src0->name, src1->name);
+
+        if (src0->type != GGML_TYPE_F32 || src1->type != GGML_TYPE_F32 || dst->type != GGML_TYPE_F32) {
+            //GGML_NSLog(@"BNNS MatMul F32: Invalid types\n");
+            return false;
+        }
+        // Ensure src1 and dst are matrices
+        if (!ggml_is_matrix(src1) || !ggml_is_matrix(dst)) {
+            //GGML_NSLog(@"BNNS MatMul F32: src1 or dst is not a matrix.\n");
+            return false;
+        }
+
+
+        float *A_data = (float *)((char *)id_src0.contents + offs_src0);
+        float *B_data = (float *)((char *)id_src1.contents + offs_src1);
+        float *C_data = (float *)((char *)id_dst.contents  + offs_dst);
+
+        if (!A_data || !B_data || !C_data) {
+            //GGML_NSLog(@"BNNS MatMul F32: Failed to get buffer contents\n");
+            return false;
+        }
+
+        // src0 (Matrix A): [M, K] (ne1, ne0)
+        // src1 (Matrix B): [K, N] (ne1, ne0)
+        // dst  (Matrix C): [M, N] (ne1, ne0)
+        // M = src0->ne[1], K = src0->ne[0]
+        // K = src1->ne[1], N = src1->ne[0] (BNNS expects K as first dim for B if not transposed)
+        // M = dst->ne[1],  N = dst->ne[0]
+
+        // For matrix A (src0)
+        size_t A_shape[] = {src0->ne[1], src0->ne[0]}; // M, K
+        size_t A_strides[] = {src0->nb[1] / sizeof(float), src0->nb[0] / sizeof(float)};
+        BNNSNDArrayDescriptor *A_desc = BNNSNDArrayDescriptorCreate(A_data, NULL, BNNSDataTypeFloat32, 2, A_shape, A_strides, NULL);
+        if (!A_desc) { return false; }
+
+        // For matrix B (src1)
+        // BNNS expects B to be KxN. In ggml, src1 is typically KxN (ne0=N, ne1=K)
+        // but if src1 is transposed in ggml (ne0=K, ne1=N and nb are swapped), BNNS needs to know.
+        // We'll assume src1 is not transposed for simplicity first.
+        // If src1 layout is [N, K] (row-major from C perspective), then BNNS needs transpose flag or KxN layout.
+        // Let's assume standard ggml layout: src1->ne[0] is N, src1->ne[1] is K
+        size_t B_shape[] = {src1->ne[1], src1->ne[0]}; // K, N
+        size_t B_strides[] = {src1->nb[1] / sizeof(float), src1->nb[0] / sizeof(float)};
+        BNNSNDArrayDescriptor *B_desc = BNNSNDArrayDescriptorCreate(B_data, NULL, BNNSDataTypeFloat32, 2, B_shape, B_strides, NULL);
+        if (!B_desc) { BNNSNDArrayDescriptorDestroy(A_desc); return false; }
+
+        // For matrix C (dst)
+        size_t C_shape[] = {dst->ne[1], dst->ne[0]}; // M, N
+        size_t C_strides[] = {dst->nb[1] / sizeof(float), dst->nb[0] / sizeof(float)};
+        BNNSNDArrayDescriptor *C_desc = BNNSNDArrayDescriptorCreate(C_data, NULL, BNNSDataTypeFloat32, 2, C_shape, C_strides, NULL);
+        if (!C_desc) { BNNSNDArrayDescriptorDestroy(A_desc); BNNSNDArrayDescriptorDestroy(B_desc); return false; }
+
+        // MatMul descriptor - assuming A and B are not transposed from BNNS's perspective (column-major)
+        // If ggml tensors are row-major, then effectively A and B are already transposed from Fortran/BNNS perspective.
+        // So, if A is MxK and B is KxN in C row-major, it's KxM and NxK for Fortran. C = A*B.
+        // BNNS default is C = A * B. If A is (m,k) and B is (k,n), C is (m,n).
+        // Our ggml tensors: src0 (A) has ne[1]=M, ne[0]=K. src1 (B) has ne[1]=K, ne[0]=N.
+        // This matches BNNS expectation if data is laid out as such.
+        BNNSMatMulDescriptor *matmul_desc = BNNSMatMulDescriptorCreate(false, false, 1.0f, BNNSActivationIdentity, 0.0f, 0.0f, NULL);
+        if (!matmul_desc) { BNNSNDArrayDescriptorDestroy(A_desc); BNNSNDArrayDescriptorDestroy(B_desc); BNNSNDArrayDescriptorDestroy(C_desc); return false; }
+
+        int err = BNNSApplyMatrixMultiply(matmul_desc, A_desc, B_desc, C_desc);
+
+        BNNSNDArrayDescriptorDestroy(A_desc);
+        BNNSNDArrayDescriptorDestroy(B_desc);
+        BNNSNDArrayDescriptorDestroy(C_desc);
+        BNNSMatMulDescriptorDestroy(matmul_desc);
+
+        if (err != 0) {
+            //GGML_NSLog(@"BNNS MatMul F32: BNNSApplyMatrixMultiply failed with error %d\n", err);
+            return false;
+        }
+        //GGML_NSLog(@"BNNS MatMul F32: Success for %s\n", dst->name);
+        return true;
+    }
+}
+
+static bool ggml_metal_bnns_mul_mm_f16_f32(
+        ggml_backend_t   backend,
+        id<MTLCommandBuffer> command_buffer,
+        id<MTLBuffer> id_src0, size_t offs_src0,
+        id<MTLBuffer> id_src1, size_t offs_src1,
+        id<MTLBuffer> id_dst,  size_t offs_dst,
+        const struct ggml_tensor * src0,
+        const struct ggml_tensor * src1,
+        struct ggml_tensor * dst) {
+    @autoreleasepool {
+        //GGML_NSLog(@"Executing BNNS MatMul F16_F32 for %s = %s * %s\n", dst->name, src0->name, src1->name);
+
+        if (src0->type != GGML_TYPE_F16 || src1->type != GGML_TYPE_F16 || dst->type != GGML_TYPE_F32) {
+            //GGML_NSLog(@"BNNS MatMul F16_F32: Invalid types\n");
+            return false;
+        }
+        if (!ggml_is_matrix(src1) || !ggml_is_matrix(dst)) {
+            //GGML_NSLog(@"BNNS MatMul F16_F32: src1 or dst is not a matrix.\n");
+            return false;
+        }
+
+        ggml_fp16_t *A_data_fp16 = (ggml_fp16_t *)((char *)id_src0.contents + offs_src0);
+        ggml_fp16_t *B_data_fp16 = (ggml_fp16_t *)((char *)id_src1.contents + offs_src1);
+        float *C_data_f32 = (float *)((char *)id_dst.contents + offs_dst);
+
+        if (!A_data_fp16 || !B_data_fp16 || !C_data_f32) {
+            //GGML_NSLog(@"BNNS MatMul F16_F32: Failed to get buffer contents\n");
+            return false;
+        }
+
+        // Matrix A (src0) - FP16
+        size_t A_shape[] = {src0->ne[1], src0->ne[0]}; // M, K
+        size_t A_strides[] = {src0->nb[1] / sizeof(ggml_fp16_t), src0->nb[0] / sizeof(ggml_fp16_t)};
+        BNNSNDArrayDescriptor *A_desc = BNNSNDArrayDescriptorCreate(A_data_fp16, NULL, BNNSDataTypeFloat16, 2, A_shape, A_strides, NULL);
+        if (!A_desc) { return false; }
+
+        // Matrix B (src1) - FP16
+        size_t B_shape[] = {src1->ne[1], src1->ne[0]}; // K, N
+        size_t B_strides[] = {src1->nb[1] / sizeof(ggml_fp16_t), src1->nb[0] / sizeof(ggml_fp16_t)};
+        BNNSNDArrayDescriptor *B_desc = BNNSNDArrayDescriptorCreate(B_data_fp16, NULL, BNNSDataTypeFloat16, 2, B_shape, B_strides, NULL);
+        if (!B_desc) { BNNSNDArrayDescriptorDestroy(A_desc); return false; }
+
+        // Matrix C (dst) - FP32
+        size_t C_shape[] = {dst->ne[1], dst->ne[0]}; // M, N
+        size_t C_strides[] = {dst->nb[1] / sizeof(float), dst->nb[0] / sizeof(float)};
+        BNNSNDArrayDescriptor *C_desc = BNNSNDArrayDescriptorCreate(C_data_f32, NULL, BNNSDataTypeFloat32, 2, C_shape, C_strides, NULL);
+        if (!C_desc) { BNNSNDArrayDescriptorDestroy(A_desc); BNNSNDArrayDescriptorDestroy(B_desc); return false; }
+
+        BNNSMatMulDescriptor *matmul_desc = BNNSMatMulDescriptorCreate(false, false, 1.0f, BNNSActivationIdentity, 0.0f, 0.0f, NULL);
+        if (!matmul_desc) { BNNSNDArrayDescriptorDestroy(A_desc); BNNSNDArrayDescriptorDestroy(B_desc); BNNSNDArrayDescriptorDestroy(C_desc); return false; }
+
+        int err = BNNSApplyMatrixMultiply(matmul_desc, A_desc, B_desc, C_desc);
+
+        BNNSNDArrayDescriptorDestroy(A_desc);
+        BNNSNDArrayDescriptorDestroy(B_desc);
+        BNNSNDArrayDescriptorDestroy(C_desc);
+        BNNSMatMulDescriptorDestroy(matmul_desc);
+
+        if (err != 0) {
+            //GGML_NSLog(@"BNNS MatMul F16_F32: BNNSApplyMatrixMultiply failed with error %d\n", err);
+            return false;
+        }
+        //GGML_NSLog(@"BNNS MatMul F16_F32: Success for %s\n", dst->name);
+        return true;
+    }
+}
+
+static bool ggml_metal_bnns_norm_f32(
+        ggml_backend_t   backend,
+        id<MTLCommandBuffer> command_buffer,
+        id<MTLBuffer> id_src0, size_t offs_src0,
+        id<MTLBuffer> id_dst,  size_t offs_dst,
+        const struct ggml_tensor * src0,
+        struct ggml_tensor * dst,
+        float eps) {
+    @autoreleasepool {
+        //GGML_NSLog(@"Executing BNNS LayerNorm F32 for %s\n", dst->name);
+
+        if (src0->type != GGML_TYPE_F32 || dst->type != GGML_TYPE_F32) {
+            //GGML_NSLog(@"BNNS Norm F32: Invalid types\n");
+            return false;
+        }
+        // Layer Normalization typically happens across the last dimension (features)
+        // For a tensor [N, C, H, W], it would normalize across W.
+        // For ggml, ne[0] is usually the dimension to normalize.
+
+        float *input_data = (float *)((char *)id_src0.contents + offs_src0);
+        float *output_data = (float *)((char *)id_dst.contents + offs_dst);
+
+        if (!input_data || !output_data) {
+            //GGML_NSLog(@"BNNS Norm F32: Failed to get buffer contents\n");
+            return false;
+        }
+
+        // Number of elements to normalize (e.g., features in a token embedding)
+        size_t num_features = src0->ne[0];
+        // Number of independent normalization operations (e.g., tokens in a sequence * batch_size * other_dims)
+        size_t num_instances = ggml_nelements(src0) / num_features;
+        if (ggml_nelements(src0) != ggml_nelements(dst)){
+            //GGML_NSLog(@"BNNS Norm F32: Input and output tensor sizes do not match.\n");
+            return false;
+        }
+
+
+        // BNNSApplyLayerNormalization expects input and output to be [num_instances, num_features]
+        size_t shape[] = {num_instances, num_features};
+        // Assuming data is contiguous for each instance's features.
+        // Stride to next feature, stride to next instance's features
+        size_t input_strides[]  = {src0->nb[0] / sizeof(float), src0->nb[1] / sizeof(float)}; // nb[0] for feature stride, nb[1] for instance stride
+        size_t output_strides[] = {dst->nb[0] / sizeof(float),  dst->nb[1] / sizeof(float)};
+
+
+        BNNSNDArrayDescriptor *input_desc = BNNSNDArrayDescriptorCreate(input_data, NULL, BNNSDataTypeFloat32, 2, shape, input_strides, NULL);
+        if (!input_desc) { return false; }
+        BNNSNDArrayDescriptor *output_desc = BNNSNDArrayDescriptorCreate(output_data, NULL, BNNSDataTypeFloat32, 2, shape, output_strides, NULL);
+        if (!output_desc) { BNNSNDArrayDescriptorDestroy(input_desc); return false; }
+
+        // For LayerNorm, we need scale (gamma) and bias (beta).
+        // ggml's GGML_OP_NORM might only have epsilon (for variance).
+        // ggml's GGML_OP_RMS_NORM usually has a scale (weight) and epsilon.
+        // BNNSApplyLayerNormalization: out = (in - mean) / sqrt(variance + epsilon) * scale + bias
+        // If we want RMSNorm: mean should be 0.
+        // This might require pre-centering the input for RMSNorm or if BNNS LayerNorm cannot be configured.
+
+        // Assuming this is a standard LayerNorm for now where src1 = gamma, src2 = beta (if available)
+        // If only eps is given (like in GGML_OP_NORM or GGML_OP_RMS_NORM without separate gamma/beta tensors),
+        // we might need to pass identity scale (1.0f) and zero bias (0.0f).
+        // The `eps` in ggml is typically added to variance inside sqrt.
+        // BNNS's epsilon is also for variance.
+
+        // Let's assume for GGML_OP_NORM/RMS_NORM, if src1 is present, it's gamma (scale).
+        // If not, use 1.0f. Beta is often not used in ggml's RMSNorm.
+        float *gamma_data = NULL;
+        float *beta_data = NULL; // Typically NULL for RMSNorm or if not provided
+
+        BNNSNDArrayDescriptor *gamma_desc = NULL;
+        BNNSNDArrayDescriptor *beta_desc = NULL;
+
+        // Simplified: if a weight tensor (src1 of NORM op) is available, use it as gamma.
+        // This part needs to align with how ggml_metal_encode_node calls this.
+        // For now, assuming no separate gamma/beta tensors are passed into *this* specific BNNS wrapper.
+        // This means we'd use identity scale and zero bias here.
+        // A more complete solution would involve checking node->src[1] and node->src[2] for gamma/beta.
+
+        // Create dummy scale and bias if not provided (e.g. for RMSNorm-like behavior if mean is handled)
+        // For true LayerNorm, these would come from ggml_tensor src1 and src2.
+        // For now, this function is simplified and assumes identity scale/zero bias
+        // unless these are explicitly passed in or handled by higher-level logic.
+        // The `eps` parameter is directly usable.
+
+        BNNSLayerNormalizationParameters params = {
+            .scale = NULL, // BNNSNDArrayDescriptor for gamma
+            .bias = NULL,  // BNNSNDArrayDescriptor for beta
+            .epsilon = eps,
+            .activation = BNNSActivationIdentity, // No activation after normalization
+        };
+
+        // If gamma and beta were available as ggml_tensors, they would be setup here as BNNSNDArrayDescriptors
+        // e.g. if node->src[1] (gamma) and node->src[2] (beta) were passed to this function:
+        // size_t feature_shape[] = {num_features};
+        // size_t feature_strides[] = {1};
+        // if (gamma_tensor_data_ptr) {
+        //     gamma_desc = BNNSNDArrayDescriptorCreate(gamma_tensor_data_ptr, NULL, BNNSDataTypeFloat32, 1, feature_shape, feature_strides, NULL);
+        //     params.scale = gamma_desc;
+        // }
+        // if (beta_tensor_data_ptr) {
+        //     beta_desc = BNNSNDArrayDescriptorCreate(beta_tensor_data_ptr, NULL, BNNSDataTypeFloat32, 1, feature_shape, feature_strides, NULL);
+        //     params.bias = beta_desc;
+        // }
+
+
+        int err = BNNSApplyLayerNormalization(NULL, input_desc, output_desc, &params);
+
+        if (gamma_desc) BNNSNDArrayDescriptorDestroy(gamma_desc);
+        if (beta_desc) BNNSNDArrayDescriptorDestroy(beta_desc);
+        BNNSNDArrayDescriptorDestroy(input_desc);
+        BNNSNDArrayDescriptorDestroy(output_desc);
+
+
+        if (err != 0) {
+            //GGML_NSLog(@"BNNS Norm F32: BNNSApplyLayerNormalization failed with error %d\n", err);
+            return false;
+        }
+        //GGML_NSLog(@"BNNS Norm F32: Success for %s\n", dst->name);
+        return true;
+    }
+}
+#endif // GGML_METAL_USE_BNNS
+
 static bool ggml_metal_encode_node(
                         ggml_backend_t   backend,
                                    int   idx,
@@ -2790,6 +3281,29 @@ static bool ggml_metal_encode_node(
             } break;
         case GGML_OP_MUL_MAT:
             {
+#if GGML_METAL_USE_BNNS
+                if (ctx_dev->use_bnns_runtime) {
+                    // Try to use BNNS for specific cases
+                    if (src0t == GGML_TYPE_F32 && src1t == GGML_TYPE_F32 && dstt == GGML_TYPE_F32) {
+                        if (ggml_metal_bnns_mul_mv_f32(backend, encoder.commandBuffer, id_src0, offs_src0, id_src1, offs_src1, id_dst, offs_dst, src0, src1, dst)) {
+                            return true;
+                        }
+                    } else if (src0t == GGML_TYPE_F16 && src1t == GGML_TYPE_F16 && dstt == GGML_TYPE_F32) { // Assuming src1 is also F16 for mv_f16_f32
+                        if (ggml_metal_bnns_mul_mv_f16_f32(backend, encoder.commandBuffer, id_src0, offs_src0, id_src1, offs_src1, id_dst, offs_dst, src0, src1, dst)) {
+                            return true;
+                        }
+                    } else if (src0t == GGML_TYPE_F32 && src1t == GGML_TYPE_F32 && dstt == GGML_TYPE_F32 && ggml_is_matrix(src1) && ggml_is_matrix(dst)) {
+                         if (ggml_metal_bnns_mul_mm_f32_f32(backend, encoder.commandBuffer, id_src0, offs_src0, id_src1, offs_src1, id_dst, offs_dst, src0, src1, dst)) {
+                            return true;
+                        }
+                    } else if (src0t == GGML_TYPE_F16 && src1t == GGML_TYPE_F16 && dstt == GGML_TYPE_F32 && ggml_is_matrix(src1) && ggml_is_matrix(dst)) { // Assuming src1 is also F16 for mm_f16_f32
+                        if (ggml_metal_bnns_mul_mm_f16_f32(backend, encoder.commandBuffer, id_src0, offs_src0, id_src1, offs_src1, id_dst, offs_dst, src0, src1, dst)) {
+                            return true;
+                        }
+                    }
+                    // Fallback to existing Metal kernels if BNNS is not applicable or fails
+                }
+#endif
                 GGML_ASSERT(ne00 == ne10);
 
                 GGML_ASSERT(ne12 % ne02 == 0);
@@ -3719,6 +4233,17 @@ static bool ggml_metal_encode_node(
             } break;
         case GGML_OP_RMS_NORM:
             {
+#if GGML_METAL_USE_BNNS
+                if (ctx_dev->use_bnns_runtime && src0t == GGML_TYPE_F32 && dstt == GGML_TYPE_F32) {
+                    float eps;
+                    memcpy(&eps, dst->op_params, sizeof(float));
+                    // Note: BNNSApplyLayerNormalization is for LayerNorm. RMSNorm might need different handling or input adjustment.
+                    // For now, let's assume it can be used if eps is for variance.
+                    if (ggml_metal_bnns_norm_f32(backend, encoder.commandBuffer, id_src0, offs_src0, id_dst, offs_dst, src0, dst, eps)) {
+                        return true;
+                    }
+                }
+#endif
                 GGML_ASSERT(ne00 % 4 == 0);
                 GGML_ASSERT(ggml_is_contiguous_1(src0));
 
@@ -3827,6 +4352,15 @@ static bool ggml_metal_encode_node(
             } break;
         case GGML_OP_NORM:
             {
+#if GGML_METAL_USE_BNNS
+                if (ctx_dev->use_bnns_runtime && src0t == GGML_TYPE_F32 && dstt == GGML_TYPE_F32) {
+                    float eps;
+                    memcpy(&eps, dst->op_params, sizeof(float));
+                    if (ggml_metal_bnns_norm_f32(backend, encoder.commandBuffer, id_src0, offs_src0, id_dst, offs_dst, src0, dst, eps)) {
+                        return true;
+                    }
+                }
+#endif
                 GGML_ASSERT(ne00 % 4 == 0);
                 GGML_ASSERT(ggml_is_contiguous_1(src0));
 

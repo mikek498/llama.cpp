@@ -113,6 +113,13 @@ Any other BLAS library can be used by setting the `GGML_BLAS_VENDOR` option. See
 On MacOS, Metal is enabled by default. Using Metal makes the computation run on the GPU.
 To disable the Metal build at compile time use the `-DGGML_METAL=OFF` cmake option.
 
+Additionally, for Apple Silicon, you can enable the use of Apple's Accelerate framework (BNNS) for certain operations, which may improve performance. This requires specific OS and Xcode versions (see [Metal Backend Optimizations](./metal.md) for details).
+To enable BNNS integration at compile time:
+```bash
+cmake .. -DLLAMA_METAL=ON -DGGML_METAL_USE_BNNS=ON
+```
+This needs to be further enabled at runtime using the `use_bnns` context parameter. See the [Metal documentation](./metal.md#d-how-to-enable-at-runtime) for more details.
+
 When built with Metal support, you can explicitly disable GPU inference with the `--n-gpu-layers 0` command-line argument.
 
 ## SYCL

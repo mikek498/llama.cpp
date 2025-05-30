@@ -212,6 +212,15 @@ static struct llama_model * llama_model_load_from_file_impl(
         size_t free, total; // NOLINT
         ggml_backend_dev_memory(dev, &free, &total);
         LLAMA_LOG_INFO("%s: using device %s (%s) - %zu MiB free\n", __func__, ggml_backend_dev_name(dev), ggml_backend_dev_description(dev), free/1024/1024);
+
+#ifdef GGML_USE_METAL
+        if (ggml_backend_dev_backend_reg(dev) == ggml_backend_metal_reg()) {
+            // Assuming ggml-metal.h is included where ggml_backend_metal_device_context is defined
+            // and that ggml_backend_metal_device_set_use_bnns is declared for C linkage.
+            struct ggml_backend_metal_device_context * dev_ctx = (struct ggml_backend_metal_device_context *)dev->context;
+            ggml_backend_metal_device_set_use_bnns(dev_ctx, params.use_bnns);
+        }
+#endif
     }
 
     const int status = llama_model_load(path_model, splits, *model, params);

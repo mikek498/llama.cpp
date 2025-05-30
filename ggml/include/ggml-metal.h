@@ -61,6 +61,12 @@ GGML_BACKEND_API void ggml_backend_metal_capture_next_compute(ggml_backend_t bac
 
 GGML_BACKEND_API ggml_backend_reg_t ggml_backend_metal_reg(void);
 
+// forward declaration
+struct ggml_backend_metal_device_context;
+
+// set the runtime preference for using BNNS
+GGML_BACKEND_API void ggml_backend_metal_device_set_use_bnns(struct ggml_backend_metal_device_context * ctx_dev, bool use_bnns);
+
 #ifdef __cplusplus
 }
 #endif

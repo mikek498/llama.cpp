@@ -13547,6 +13547,7 @@ llama_model_params llama_model_default_params() {
         /*.use_mmap                    =*/ true,
         /*.use_mlock                   =*/ false,
         /*.check_tensors               =*/ false,
+        /*.use_bnns                    =*/ false, // BNNS disabled by default
     };
 
 #ifdef GGML_USE_METAL
