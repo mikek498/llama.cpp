@@ -118,97 +118,71 @@ static void apply_unary_op(const ggml_compute_params * params, ggml_tensor * dst
                 continue;
             }
             if (op == op_sqrt) {
-                if (ne00 <= INT_MAX) {
-                    int n_int = (int)ne00;
-                    vvsqrtf((float*)dst_ptr, (const float*)src0_ptr, &n_int);
-                } else {
-                    // Fallback to loop for very large ne00
-                    for (vDSP_Length i = 0; i < ne00; i++) {
-                        ((float*)dst_ptr)[i] = sqrtf(((const float*)src0_ptr)[i]);
-                    }
-                }
+                // Use vForce for vectorized square root
+                int count = (int)ne00;
+                vvsqrtf((float*)dst_ptr, (const float*)src0_ptr, &count);
                 continue;
             }
             if (op == op_log) {
-                if (ne00 <= INT_MAX) {
-                    int n_int = (int)ne00;
-                    vvlogf((float*)dst_ptr, (const float*)src0_ptr, &n_int);
-                } else {
-                    // Fallback to loop for very large ne00
-                    for (vDSP_Length i = 0; i < ne00; i++) {
-                        ((float*)dst_ptr)[i] = logf(((const float*)src0_ptr)[i]);
-                    }
-                }
+                // Use vForce for vectorized natural logarithm
+                int count = (int)ne00;
+                vvlogf((float*)dst_ptr, (const float*)src0_ptr, &count);
                 continue;
             }
             if (op == op_exp) {
-                if (ne00 <= INT_MAX) {
-                    int n_int = (int)ne00;
-                    vvexpf((float*)dst_ptr, (const float*)src0_ptr, &n_int);
-                } else {
-                    // Fallback to loop for very large ne00
-                    for (vDSP_Length i = 0; i < ne00; i++) {
-                        ((float*)dst_ptr)[i] = expf(((const float*)src0_ptr)[i]);
-                    }
-                }
+                // Use vForce for vectorized exponential
+                int count = (int)ne00;
+                vvexpf((float*)dst_ptr, (const float*)src0_ptr, &count);
                 continue;
             }
             if (op == op_tanh) {
-                if (ne00 <= INT_MAX) {
-                    int n_int = (int)ne00;
-                    vvtanhf((float*)dst_ptr, (const float*)src0_ptr, &n_int);
-                } else {
-                    // Fallback to loop for very large ne00
-                    for (vDSP_Length i = 0; i < ne00; i++) {
-                        ((float*)dst_ptr)[i] = tanhf(((const float*)src0_ptr)[i]);
-                    }
-                }
+                // Use vForce for vectorized hyperbolic tangent
+                int count = (int)ne00;
+                vvtanhf((float*)dst_ptr, (const float*)src0_ptr, &count);
                 continue;
             }
             if (op == op_relu) {
-                const float zero_float = 0.0f;
-                vDSP_vmaxs((const float*)src0_ptr, 1, &zero_float, (float*)dst_ptr, 1, ne00);
+                // Optimized ReLU using vDSP_vthres (threshold)
+                float zero = 0.0f;
+                vDSP_vthres((const float*)src0_ptr, 1, &zero, (float*)dst_ptr, 1, static_cast<vDSP_Length>(ne00));
                 continue;
             }
             if (op == op_sigmoid) {
-                if (ne00 <= INT_MAX) {
-                    int n_int = (int)ne00;
-                    vvsigmoidf((float*)dst_ptr, (const float*)src0_ptr, &n_int);
-                } else {
-                    // Fallback to loop for very large ne00
-                    // vec_unary_op will handle this via op_sigmoid(float)
-                    vec_unary_op<op_sigmoid>(ne00, dst_ptr, src0_ptr);
-                }
+                // Optimized sigmoid using vDSP and vForce
+                float *temp = (float *)alloca(ne00 * sizeof(float));
+                float neg_one = -1.0f;
+                float one = 1.0f;
+                
+                // temp = -x
+                vDSP_vsmul((const float*)src0_ptr, 1, &neg_one, temp, 1, ne00);
+                
+                // dst = exp(temp)
+                int count = (int)ne00;
+                vvexpf((float*)dst_ptr, temp, &count);
+                
+                // temp = 1 + exp(-x)
+                vDSP_vsadd((float*)dst_ptr, 1, &one, temp, 1, ne00);
+                
+                // dst = 1/temp = 1/(1 + exp(-x))
+                vDSP_svdiv(&one, temp, 1, (float*)dst_ptr, 1, ne00);
                 continue;
             }
             if (op == op_sin) {
-                if (ne00 <= INT_MAX) {
-                    int n_int = (int)ne00;
-                    vvsinf((float*)dst_ptr, (const float*)src0_ptr, &n_int);
-                } else {
-                    // Fallback to loop for very large ne00
-                    for (vDSP_Length i = 0; i < ne00; i++) {
-                        ((float*)dst_ptr)[i] = sinf(((const float*)src0_ptr)[i]);
-                    }
-                }
+                // Use vForce for vectorized sine
+                int count = (int)ne00;
+                vvsinf((float*)dst_ptr, (const float*)src0_ptr, &count);
                 continue;
             }
             if (op == op_cos) {
-                if (ne00 <= INT_MAX) {
-                    int n_int = (int)ne00;
-                    vvcosf((float*)dst_ptr, (const float*)src0_ptr, &n_int);
-                } else {
-                    // Fallback to loop for very large ne00
-                    for (vDSP_Length i = 0; i < ne00; i++) {
-                        ((float*)dst_ptr)[i] = cosf(((const float*)src0_ptr)[i]);
-                    }
-                }
+                // Use vForce for vectorized cosine
+                int count = (int)ne00;
+                vvcosf((float*)dst_ptr, (const float*)src0_ptr, &count);
                 continue;
             }
         }
 #endif
         // Fallback for non-F32 types, non-Accelerate, or operations not covered by vDSP
-        vec_unary_op<op>(ne00, dst_ptr, src0_ptr); // Use ne00 for consistency
+        vec_unary_op<op>(static_cast<size_t>(ne00), dst_ptr, src0_ptr); // Cast ne00 to size_t for consistency
     }
 }
 

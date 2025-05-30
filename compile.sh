@@ -6,4 +6,4 @@ cmake -B build \
   -DGGML_USE_METAL=ON \
   -DGGML_USE_ACCELERATE=ON \
 
-cmake --build build -t llama-cli -t llama-bench -j$(sysctl -n hw.ncpu)
+cmake --build build -t llama-cli -t llama-bench -j 20
