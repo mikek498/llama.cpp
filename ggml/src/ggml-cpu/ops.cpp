@@ -3490,6 +3490,7 @@ static void ggml_compute_forward_rms_norm_back_f32(
                     // grad[#02] = repeat(scale(grad[#07],#04), #02)
                     // grad[#02] = repeat(scale(mul(grad[#08], div(0.5, #08)),#04), #02)
                     // grad[#02] = repeat(scale(mul(neg(mul(grad[#09], div(#09,#08))), div(0.5, #08)),#04), #02)
+                    // grad[#02] = repeat(scale(mul(neg(mul(sum(mul(grad[#10],#00)) * div(#09,#08), div(0.5, #08)),#04), #02)
                     // grad[#02] = repeat(scale(mul(neg(mul(sum(mul(grad[#10],#00)), div(#09,#08))), div(0.5, #08)),#04), #02)
                     // grad[#02] = repeat(-(sum(mul(grad[#10],#00)) * div(#09,#08) * div(0.5, #08) * (1/N)), #02)
                     // grad[#02] = repeat(-(sum(mul(grad[#10],#00)) * div(div(#01,#08),#08) * div(0.5, #08) * (1/N)), #02)
@@ -4011,11 +4012,20 @@ static void ggml_compute_forward_scale_f32(
     const size_t nb1 = dst->nb[1];
 
     for (int i1 = ir0; i1 < ir1; i1++) {
+        float *       dst_row_ptr = (float *) ((char *)dst->data  + i1*nb1);
+        const float * src0_row_ptr= (const float *) ((char *)src0->data + i1*nb01);
+
         if (dst->data != src0->data) {
-            // src0 is same shape as dst => same indices
-            memcpy((char *)dst->data + i1*nb1, (char *)src0->data + i1*nb01, nc * sizeof(float));
+#if defined(GGML_USE_ACCELERATE) && defined(__APPLE__)
+            vDSP_vsmul(src0_row_ptr, 1, &v, dst_row_ptr, 1, nc);
+#else
+            memcpy(dst_row_ptr, src0_row_ptr, nc * sizeof(float));
+            ggml_vec_scale_f32(nc, dst_row_ptr, v); // ggml_vec_scale_f32 handles SIMD/scalar fallback
+#endif
+        } else {
+            // In-place scaling, ggml_vec_scale_f32 handles Accelerate/SIMD/scalar
+            ggml_vec_scale_f32(nc, dst_row_ptr, v);
         }
-        ggml_vec_scale_f32(nc, (float *) ((char *) dst->data + i1*nb1), v);
     }
 }
 

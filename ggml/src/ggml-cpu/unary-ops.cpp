@@ -118,30 +118,90 @@ static void apply_unary_op(const ggml_compute_params * params, ggml_tensor * dst
                 continue;
             }
             if (op == op_sqrt) {
-                // Manual loop for sqrt as vForce requires int* count
-                for (vDSP_Length i = 0; i < ne00; i++) {
-                    ((float*)dst_ptr)[i] = sqrtf(((const float*)src0_ptr)[i]);
+                if (ne00 <= INT_MAX) {
+                    int n_int = (int)ne00;
+                    vvsqrtf((float*)dst_ptr, (const float*)src0_ptr, &n_int);
+                } else {
+                    // Fallback to loop for very large ne00
+                    for (vDSP_Length i = 0; i < ne00; i++) {
+                        ((float*)dst_ptr)[i] = sqrtf(((const float*)src0_ptr)[i]);
+                    }
                 }
                 continue;
             }
             if (op == op_log) {
-                // Manual loop for log as vForce requires int* count  
-                for (vDSP_Length i = 0; i < ne00; i++) {
-                    ((float*)dst_ptr)[i] = logf(((const float*)src0_ptr)[i]);
+                if (ne00 <= INT_MAX) {
+                    int n_int = (int)ne00;
+                    vvlogf((float*)dst_ptr, (const float*)src0_ptr, &n_int);
+                } else {
+                    // Fallback to loop for very large ne00
+                    for (vDSP_Length i = 0; i < ne00; i++) {
+                        ((float*)dst_ptr)[i] = logf(((const float*)src0_ptr)[i]);
+                    }
                 }
                 continue;
             }
             if (op == op_exp) {
-                // Manual loop for exp as vForce requires int* count
-                for (vDSP_Length i = 0; i < ne00; i++) {
-                    ((float*)dst_ptr)[i] = expf(((const float*)src0_ptr)[i]);
+                if (ne00 <= INT_MAX) {
+                    int n_int = (int)ne00;
+                    vvexpf((float*)dst_ptr, (const float*)src0_ptr, &n_int);
+                } else {
+                    // Fallback to loop for very large ne00
+                    for (vDSP_Length i = 0; i < ne00; i++) {
+                        ((float*)dst_ptr)[i] = expf(((const float*)src0_ptr)[i]);
+                    }
                 }
                 continue;
             }
             if (op == op_tanh) {
-                // Manual loop for tanh as vForce requires int* count
-                for (vDSP_Length i = 0; i < ne00; i++) {
-                    ((float*)dst_ptr)[i] = tanhf(((const float*)src0_ptr)[i]);
+                if (ne00 <= INT_MAX) {
+                    int n_int = (int)ne00;
+                    vvtanhf((float*)dst_ptr, (const float*)src0_ptr, &n_int);
+                } else {
+                    // Fallback to loop for very large ne00
+                    for (vDSP_Length i = 0; i < ne00; i++) {
+                        ((float*)dst_ptr)[i] = tanhf(((const float*)src0_ptr)[i]);
+                    }
+                }
+                continue;
+            }
+            if (op == op_relu) {
+                const float zero_float = 0.0f;
+                vDSP_vmaxs((const float*)src0_ptr, 1, &zero_float, (float*)dst_ptr, 1, ne00);
+                continue;
+            }
+            if (op == op_sigmoid) {
+                if (ne00 <= INT_MAX) {
+                    int n_int = (int)ne00;
+                    vvsigmoidf((float*)dst_ptr, (const float*)src0_ptr, &n_int);
+                } else {
+                    // Fallback to loop for very large ne00
+                    // vec_unary_op will handle this via op_sigmoid(float)
+                    vec_unary_op<op_sigmoid>(ne00, dst_ptr, src0_ptr);
+                }
+                continue;
+            }
+            if (op == op_sin) {
+                if (ne00 <= INT_MAX) {
+                    int n_int = (int)ne00;
+                    vvsinf((float*)dst_ptr, (const float*)src0_ptr, &n_int);
+                } else {
+                    // Fallback to loop for very large ne00
+                    for (vDSP_Length i = 0; i < ne00; i++) {
+                        ((float*)dst_ptr)[i] = sinf(((const float*)src0_ptr)[i]);
+                    }
+                }
+                continue;
+            }
+            if (op == op_cos) {
+                if (ne00 <= INT_MAX) {
+                    int n_int = (int)ne00;
+                    vvcosf((float*)dst_ptr, (const float*)src0_ptr, &n_int);
+                } else {
+                    // Fallback to loop for very large ne00
+                    for (vDSP_Length i = 0; i < ne00; i++) {
+                        ((float*)dst_ptr)[i] = cosf(((const float*)src0_ptr)[i]);
+                    }
                 }
                 continue;
             }

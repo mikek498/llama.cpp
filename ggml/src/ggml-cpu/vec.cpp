@@ -168,6 +168,16 @@ void ggml_vec_dot_f16(int n, float * GGML_RESTRICT s, size_t bs, ggml_fp16_t * G
 }
 
 void ggml_vec_silu_f32(const int n, float * y, const float * x) {
+#if defined(GGML_USE_ACCELERATE) && defined(__APPLE__)
+    // vForce functions take int * for count, so ensure n fits in int.
+    // INT_MAX is usually from <limits.h> or <climits> (or transitively from Accelerate.h).
+    // If n is 0 or negative, or too large, fall through to SIMD/scalar.
+    if (n > 0 && n <= 2147483647) { // Using INT_MAX literal for robustness against missing includes
+        int count = (int)n;
+        vvsiluf(y, x, &count);
+        return;
+    }
+#endif
     int i = 0;
 #if defined(__AVX512F__) && defined(__AVX512DQ__)
     for (; i + 15 < n; i += 16) {
