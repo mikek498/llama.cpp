@@ -6391,7 +6391,7 @@ kernel void kernel_get_rows_i32(
 #define SG_MAT_SIZE 64 // simdgroup matrix is of shape 8x8
 #define SG_MAT_ROW 8
 
-// each block_q contains 16*nl weights
+// Optimized matrix multiplication kernel with tiled shared memory access
 template<typename T, typename T4x4, typename simdgroup_T8x8, typename block_q, short nl, void (*dequantize_func)(device const block_q *, short, thread T4x4 &)>
 kernel void kernel_mul_mm(
         constant ggml_metal_kargs_mul_mm & args,
@@ -6403,134 +6403,86 @@ kernel void kernel_mul_mm(
         ushort tiitg[[thread_index_in_threadgroup]],
         ushort sgitg[[simdgroup_index_in_threadgroup]]) {
 
-    threadgroup T     * sa = (threadgroup T     *)(shmem);
-    threadgroup float * sb = (threadgroup float *)(shmem + 4096);
-
-    const int r0 = tgpig.y;
-    const int r1 = tgpig.x;
+    const int block_idx_m = tgpig.y;
+    const int block_idx_n = tgpig.x;
     const int im = tgpig.z;
 
-    // if this block is of 64x32 shape or smaller
-    const short n_rows = (args.ne0 - r0*BLOCK_SIZE_M < BLOCK_SIZE_M) ? (args.ne0 - r0*BLOCK_SIZE_M) : BLOCK_SIZE_M;
-    const short n_cols = (args.ne1 - r1*BLOCK_SIZE_N < BLOCK_SIZE_N) ? (args.ne1 - r1*BLOCK_SIZE_N) : BLOCK_SIZE_N;
+    const int local_row = tiitg / THREAD_PER_ROW;
+    const int local_col = tiitg % THREAD_PER_ROW;
 
-    // a thread shouldn't load data outside of the matrix
-    const short thread_row = ((short)tiitg/THREAD_PER_ROW) < n_rows ? ((short)tiitg/THREAD_PER_ROW) : n_rows - 1;
-    const short thread_col = ((short)tiitg/THREAD_PER_COL) < n_cols ? ((short)tiitg/THREAD_PER_COL) : n_cols - 1;
+    const int global_row = block_idx_m * BLOCK_SIZE_M + local_row;
+    const int global_col = block_idx_n * BLOCK_SIZE_N + local_col;
 
-    simdgroup_T8x8     ma[4];
-    simdgroup_float8x8 mb[2];
-    simdgroup_float8x8 mc[8];
+    // Get matrix dimensions
+    const int64_t m = args.ne00;  // Number of rows in A and C
+    const int64_t n = args.ne12;  // Number of columns in B and C
+    const int64_t k = args.ne02;  // Number of columns in A and rows in B
 
-    for (short i = 0; i < 8; i++){
-        mc[i] = make_filled_simdgroup_matrix<float, 8>(0.f);
-    }
+    // Cast shared memory to appropriate types
+    threadgroup T     * sa = (threadgroup T *)(shmem);
+    threadgroup float * sb = (threadgroup float *)(shmem + 4096);
 
-    short il = (tiitg % THREAD_PER_ROW);
+    // Initialize output tile
+    float acc = 0.0f;
 
-    const int i12 = im%args.ne12;
-    const int i13 = im/args.ne12;
-
+    // Get batch indices
+    const int i12 = im % args.ne12;
+    const int i13 = im / args.ne12;
     const uint64_t offset0 = (i12/args.r2)*args.nb02 + (i13/args.r3)*args.nb03;
-    const short    offset1 = il/nl;
 
-    device const block_q * x = (device const block_q *)(src0
-        + args.nb01*(r0*BLOCK_SIZE_M + thread_row) + offset0) + offset1;
+    // Main computation loop over tiles
+    for (int tile_idx = 0; tile_idx < (k + BLOCK_SIZE_K - 1) / BLOCK_SIZE_K; ++tile_idx) {
+        const int tiled_k = tile_idx * BLOCK_SIZE_K + local_col;
+        const int tiled_m = tile_idx * BLOCK_SIZE_K + local_row;
 
-    device const float   * y = (device const float   *)(src1
-        + args.nb13*i13
-        + args.nb12*i12
-        + args.nb11*(r1*BLOCK_SIZE_N + thread_col)
-        + args.nb10*(BLOCK_SIZE_K / THREAD_PER_COL * (tiitg % THREAD_PER_COL)));
+        // Load tile of A into shared memory with dequantization
+        if (global_row < m && tiled_k < k) {
+            const short il = tiitg % nl;
+            const short offset1 = il / nl;
+            device const block_q * x = (device const block_q *)(src0 + args.nb01 * global_row + offset0) + offset1;
+            
+            T4x4 temp_a;
+            dequantize_func(x, il, temp_a);
+            
+            // Store dequantized values to shared memory
+            #pragma unroll(16)
+            for (short i = 0; i < 16; i++) {
+                if (local_row * 16 + i < BLOCK_SIZE_M * BLOCK_SIZE_K) {
+                    sa[local_row * BLOCK_SIZE_K + local_col] = temp_a[i/4][i%4];
+                }
+            }
+        } else {
+            sa[local_row * BLOCK_SIZE_K + local_col] = 0;
+        }
 
-    for (int loop_k = 0; loop_k < args.ne00; loop_k += BLOCK_SIZE_K) {
-        // load data and store to threadgroup memory
-        T4x4 temp_a;
-        dequantize_func(x, il, temp_a);
+        // Load tile of B into shared memory
+        if (tiled_k < k && global_col < n) {
+            device const float * y = (device const float *)(src1
+                + args.nb13 * i13
+                + args.nb12 * i12
+                + args.nb11 * global_col
+                + args.nb10 * tiled_k);
+            sb[local_row * BLOCK_SIZE_N + local_col] = *y;
+        } else {
+            sb[local_row * BLOCK_SIZE_N + local_col] = 0;
+        }
 
         threadgroup_barrier(mem_flags::mem_threadgroup);
 
-        #pragma unroll(16)
-        for (short i = 0; i < 16; i++) {
-            *(sa + SG_MAT_SIZE * ((tiitg/THREAD_PER_ROW/8) \
-            +                     (tiitg%THREAD_PER_ROW)*16 + (i/8)*8) \
-            +                     (tiitg/THREAD_PER_ROW)%8  + (i&7)*8) = temp_a[i/4][i%4];
+        // Compute partial dot product
+        for (int i = 0; i < BLOCK_SIZE_K; ++i) {
+            acc += (float)sa[local_row * BLOCK_SIZE_K + i] * 
+                   (float)sb[i * BLOCK_SIZE_N + local_col];
         }
-
-        *(threadgroup float2x4 *)(sb + 32*8*(tiitg%THREAD_PER_COL) + 8*(tiitg/THREAD_PER_COL)) = *((device float2x4 *) y);
-
-        il = (il + 2 < nl) ? il + 2 : il % 2;
-        x  = (il < 2) ? x + (2 + nl - 1)/nl : x;
-        y += BLOCK_SIZE_K;
 
         threadgroup_barrier(mem_flags::mem_threadgroup);
-
-        // load matrices from threadgroup memory and conduct outer products
-        threadgroup const T     * lsma = (sa + THREAD_MAT_M*SG_MAT_SIZE*(sgitg%2));
-        threadgroup const float * lsmb = (sb + THREAD_MAT_N*SG_MAT_SIZE*(sgitg/2));
-
-        #pragma unroll(4)
-        for (short ik = 0; ik < BLOCK_SIZE_K/8; ik++) {
-            #pragma unroll(4)
-            for (short i = 0; i < 4; i++) {
-                simdgroup_load(ma[i], lsma + SG_MAT_SIZE * i);
-            }
-
-            simdgroup_barrier(mem_flags::mem_none);
-
-            #pragma unroll(2)
-            for (short i = 0; i < 2; i++) {
-                simdgroup_load(mb[i], lsmb + SG_MAT_SIZE * i);
-            }
-
-            #pragma unroll(8)
-            for (short i = 0; i < 8; i++){
-                simdgroup_multiply_accumulate(mc[i], mb[i/4], ma[i%4], mc[i]);
-            }
-
-            lsma += (BLOCK_SIZE_M/SG_MAT_ROW)*SG_MAT_SIZE;
-            lsmb += (BLOCK_SIZE_N/SG_MAT_ROW)*SG_MAT_SIZE;
-        }
     }
 
-    if ((r0 + 1) * BLOCK_SIZE_M <= args.ne0 && (r1 + 1) * BLOCK_SIZE_N <= args.ne1) {
-        device float * C = (device float *) dst +
-            (BLOCK_SIZE_M * r0 + 32*(sgitg &  1)) + \
-            (BLOCK_SIZE_N * r1 + 16*(sgitg >> 1)) * args.ne0 + im*args.ne1*args.ne0;
-
-        for (short i = 0; i < 8; i++) {
-            simdgroup_store(mc[i], C + 8 * (i%4) + 8 * args.ne0 * (i/4), args.ne0);
-        }
-    } else {
-        // block is smaller than 64x32, we should avoid writing data outside of the matrix
-        threadgroup_barrier(mem_flags::mem_threadgroup);
-        threadgroup float * temp_str = ((threadgroup float *) shmem) \
-                                     + 32*(sgitg&1) + (16*(sgitg >> 1))*BLOCK_SIZE_M;
-        for (short i = 0; i < 8; i++) {
-            simdgroup_store(mc[i], temp_str + 8*(i%4) + 8*BLOCK_SIZE_M*(i/4), BLOCK_SIZE_M);
-        }
-
-        threadgroup_barrier(mem_flags::mem_threadgroup);
-
-        if (sgitg == 0) {
-            for (int j = tiitg; j < n_cols; j += BLOCK_SIZE_N) {
-                device float  * D  = (device float  *) dst + (r0*BLOCK_SIZE_M) + (r1*BLOCK_SIZE_N + j)*args.ne0 + im*args.ne1*args.ne0;
-                device float4 * D4 = (device float4 *) D;
-
-                threadgroup float  * C  = temp_str + (j*BLOCK_SIZE_M);
-                threadgroup float4 * C4 = (threadgroup float4 *) C;
-
-                int i = 0;
-                for (; i < n_rows/4; i++) {
-                    *(D4 + i) = *(C4 + i);
-                }
-
-                i *= 4;
-                for (; i < n_rows; i++) {
-                    *(D + i) = *(C + i);
-                }
-            }
-        }
+    // Store the result with bounds checking
+    if (global_row < m && global_col < n) {
+        device float * C = (device float *)dst + global_row * n + global_col + 
+                         im * args.ne1 * args.ne0;
+        *C = acc;
     }
 }
 
